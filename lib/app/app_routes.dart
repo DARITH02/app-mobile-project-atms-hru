@@ -1,0 +1,25 @@
+abstract final class AppRoutes {
+  static const home = '/home';
+  static const login = '/login';
+  static const register = '/register';
+  static const courses = '/courses';
+  static const attendance = '/attendance';
+  static const studentQrScan = '/attendance/scan';
+  static const studentPermissions = '/student/permissions';
+  static const grades = '/grades';
+  static const gpa = '/gpa';
+  static const documents = '/documents';
+  static const payments = '/payments';
+  static const library = '/library';
+  static const profile = '/profile';
+  static const teacherClasses = '/teacher/classes';
+  static const teacherDocuments = '/teacher/documents';
+  static const teacherStudents = '/teacher/students';
+  static const teacherSchedules = '/teacher/schedules';
+  static const teacherAttendance = '/teacher/attendance';
+  static const teacherQrCheckIn = '/teacher/attendance/qr-check-in';
+  static const teacherPermissions = '/teacher/permissions';
+  static const notifications = '/notifications';
+  static const about = '/about';
+  static const support = '/support';
+}
