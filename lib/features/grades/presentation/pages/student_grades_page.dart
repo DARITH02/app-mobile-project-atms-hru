@@ -3,6 +3,7 @@ import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/features/grades/data/student_grades_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
 
 class StudentGradesPage extends StatefulWidget {
@@ -43,33 +44,35 @@ class _StudentGradesPageState extends State<StudentGradesPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<StudentGrades>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<StudentGrades>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final grades = snapshot.data!;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _SummaryBand(grades: grades),
-                const SizedBox(height: 18),
-                if (grades.subjects.isEmpty)
-                  _EmptyState()
-                else
-                  for (final subject in grades.subjects) ...[
-                    _SubjectGradeCard(subject: subject),
-                    const SizedBox(height: 12),
-                  ],
-              ],
-            );
-          },
+              final grades = snapshot.data!;
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _SummaryBand(grades: grades),
+                  const SizedBox(height: 18),
+                  if (grades.subjects.isEmpty)
+                    _EmptyState()
+                  else
+                    for (final subject in grades.subjects) ...[
+                      _SubjectGradeCard(subject: subject),
+                      const SizedBox(height: 12),
+                    ],
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const StudentBottomNavigation(

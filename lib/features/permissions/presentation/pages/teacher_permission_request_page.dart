@@ -4,6 +4,7 @@ import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/core/network/api_exception.dart';
 import 'package:hru_atms/features/permissions/data/teacher_permission_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/teacher_bottom_navigation.dart';
 
 class TeacherPermissionRequestPage extends StatefulWidget {
@@ -23,6 +24,9 @@ class _TeacherPermissionRequestPageState
 
   TeacherPermissionSession? _session;
   String _type = 'sick';
+  String _mode = 'session';
+  DateTime _startDate = DateTime.now();
+  DateTime _endDate = DateTime.now();
   bool _isSubmitting = false;
 
   @override
@@ -44,9 +48,30 @@ class _TeacherPermissionRequestPageState
     await future;
   }
 
-  Future<void> _submit() async {
+  Future<void> _pickDate({required bool start}) async {
+    final now = DateTime.now();
+    final initial = start ? _startDate : _endDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(now) ? now : initial,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 1, now.month, now.day),
+    );
+    if (picked == null) return;
+
+    setState(() {
+      if (start) {
+        _startDate = picked;
+        if (_endDate.isBefore(_startDate)) _endDate = _startDate;
+      } else {
+        _endDate = picked;
+      }
+    });
+  }
+
+  Future<void> _submit(List<TeacherPermissionSession> sessions) async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_session == null) {
+    if (_mode == 'session' && _session == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(context.tr('Choose the session for permission.')),
@@ -54,23 +79,41 @@ class _TeacherPermissionRequestPageState
       );
       return;
     }
+    final rangeSessions = _sessionsInRange(sessions);
+    if (_mode == 'many_days' && rangeSessions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('No sessions in this date range.'))),
+      );
+      return;
+    }
 
     setState(() => _isSubmitting = true);
     try {
-      final message = await _repository.submit(
-        attendanceSessionId: _session!.id,
-        type: _type,
-        reason: _reasonController.text,
-      );
+      final message = _mode == 'many_days'
+          ? await _repository.submitMany(
+              attendanceSessionIds: rangeSessions
+                  .map((session) => session.id)
+                  .toList(),
+              type: _type,
+              reason: _reasonController.text,
+            )
+          : await _repository.submit(
+              attendanceSessionId: _session!.id,
+              type: _type,
+              reason: _reasonController.text,
+            );
       if (!mounted) return;
       _reasonController.clear();
       setState(() {
         _session = null;
         _type = 'sick';
+        _mode = 'session';
+        _startDate = DateTime.now();
+        _endDate = DateTime.now();
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      ).showSnackBar(SnackBar(content: Text(context.tr(message))));
       await _refresh();
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -89,6 +132,20 @@ class _TeacherPermissionRequestPageState
     }
   }
 
+  List<TeacherPermissionSession> _sessionsInRange(
+    List<TeacherPermissionSession> sessions,
+  ) {
+    final start = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    final end = DateTime(_endDate.year, _endDate.month, _endDate.day);
+
+    return sessions.where((session) {
+      final date = session.sessionDate;
+      if (date == null) return false;
+      final day = DateTime(date.year, date.month, date.day);
+      return !day.isBefore(start) && !day.isAfter(end);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,58 +160,68 @@ class _TeacherPermissionRequestPageState
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<TeacherPermissionData>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
-            final data = snapshot.data!;
-            final permissionRequests = data.requests
-                .where((item) => item.requestedStatus == 'permission')
-                .toList();
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<TeacherPermissionData>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
+              final data = snapshot.data!;
+              final permissionRequests = data.requests
+                  .where((item) => item.requestedStatus == 'permission')
+                  .toList();
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _IntroCard(
-                  pendingCount: permissionRequests
-                      .where((item) => item.status == 'pending')
-                      .length,
-                ),
-                const SizedBox(height: 14),
-                _PermissionForm(
-                  formKey: _formKey,
-                  sessions: data.sessions,
-                  selectedSession: _session,
-                  type: _type,
-                  reasonController: _reasonController,
-                  isSubmitting: _isSubmitting,
-                  onSessionChanged: (value) => setState(() => _session = value),
-                  onTypeChanged: (value) => setState(() => _type = value),
-                  onSubmit: _submit,
-                ),
-                const SizedBox(height: 18),
-                _SectionHeader(
-                  title: context.tr('My requests'),
-                  trailing: context.l10n.format('{count} items', {
-                    'count': '${permissionRequests.length}',
-                  }),
-                ),
-                if (permissionRequests.isEmpty)
-                  const _EmptyHistory()
-                else
-                  for (final request in permissionRequests) ...[
-                    _RequestCard(request: request),
-                    const SizedBox(height: 10),
-                  ],
-              ],
-            );
-          },
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _IntroCard(
+                    pendingCount: permissionRequests
+                        .where((item) => item.status == 'pending')
+                        .length,
+                  ),
+                  const SizedBox(height: 14),
+                  _PermissionForm(
+                    formKey: _formKey,
+                    mode: _mode,
+                    sessions: data.sessions,
+                    selectedSession: _session,
+                    startDate: _startDate,
+                    endDate: _endDate,
+                    type: _type,
+                    reasonController: _reasonController,
+                    isSubmitting: _isSubmitting,
+                    rangeSessionCount: _sessionsInRange(data.sessions).length,
+                    onModeChanged: (value) => setState(() => _mode = value),
+                    onSessionChanged: (value) =>
+                        setState(() => _session = value),
+                    onPickStart: () => _pickDate(start: true),
+                    onPickEnd: () => _pickDate(start: false),
+                    onTypeChanged: (value) => setState(() => _type = value),
+                    onSubmit: () => _submit(data.sessions),
+                  ),
+                  const SizedBox(height: 18),
+                  _SectionHeader(
+                    title: context.tr('My requests'),
+                    trailing: context.l10n.format('{count} items', {
+                      'count': '${permissionRequests.length}',
+                    }),
+                  ),
+                  if (permissionRequests.isEmpty)
+                    const _EmptyHistory()
+                  else
+                    for (final request in permissionRequests) ...[
+                      _RequestCard(request: request),
+                      const SizedBox(height: 10),
+                    ],
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const TeacherBottomNavigation(
@@ -227,23 +294,37 @@ class _IntroCard extends StatelessWidget {
 class _PermissionForm extends StatelessWidget {
   const _PermissionForm({
     required this.formKey,
+    required this.mode,
     required this.sessions,
     required this.selectedSession,
+    required this.startDate,
+    required this.endDate,
     required this.type,
     required this.reasonController,
     required this.isSubmitting,
+    required this.rangeSessionCount,
+    required this.onModeChanged,
     required this.onSessionChanged,
+    required this.onPickStart,
+    required this.onPickEnd,
     required this.onTypeChanged,
     required this.onSubmit,
   });
 
   final GlobalKey<FormState> formKey;
+  final String mode;
   final List<TeacherPermissionSession> sessions;
   final TeacherPermissionSession? selectedSession;
+  final DateTime startDate;
+  final DateTime endDate;
   final String type;
   final TextEditingController reasonController;
   final bool isSubmitting;
+  final int rangeSessionCount;
+  final ValueChanged<String> onModeChanged;
   final ValueChanged<TeacherPermissionSession?> onSessionChanged;
+  final VoidCallback onPickStart;
+  final VoidCallback onPickEnd;
   final ValueChanged<String> onTypeChanged;
   final VoidCallback onSubmit;
 
@@ -257,28 +338,56 @@ class _PermissionForm extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DropdownButtonFormField<TeacherPermissionSession>(
-              initialValue: selectedSession,
-              isExpanded: true,
-              decoration: InputDecoration(
-                labelText: context.tr('Your attendance session'),
-                prefixIcon: Icon(Icons.schedule_outlined),
-              ),
-              items: sessions
-                  .map(
-                    (session) => DropdownMenuItem(
-                      value: session,
-                      child: Text(
-                        session.label,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              validator: (value) =>
-                  value == null ? context.tr('Choose a session.') : null,
-              onChanged: onSessionChanged,
+            SegmentedButton<String>(
+              segments: [
+                ButtonSegment(
+                  value: 'session',
+                  icon: Icon(Icons.event_available_outlined),
+                  label: Text(context.tr('One session')),
+                ),
+                ButtonSegment(
+                  value: 'many_days',
+                  icon: Icon(Icons.date_range_outlined),
+                  label: Text(context.tr('Many days')),
+                ),
+              ],
+              selected: {mode},
+              showSelectedIcon: false,
+              onSelectionChanged: (values) => onModeChanged(values.first),
             ),
+            const SizedBox(height: 12),
+            if (mode == 'session')
+              DropdownButtonFormField<TeacherPermissionSession>(
+                initialValue: selectedSession,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: context.tr('Your attendance session'),
+                  prefixIcon: Icon(Icons.schedule_outlined),
+                ),
+                items: sessions
+                    .map(
+                      (session) => DropdownMenuItem(
+                        value: session,
+                        child: Text(
+                          session.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                validator: (value) => mode == 'session' && value == null
+                    ? context.tr('Choose a session.')
+                    : null,
+                onChanged: onSessionChanged,
+              )
+            else
+              _DateRangeSelector(
+                startDate: startDate,
+                endDate: endDate,
+                sessionCount: rangeSessionCount,
+                onPickStart: onPickStart,
+                onPickEnd: onPickEnd,
+              ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -382,6 +491,121 @@ class _PermissionTypeChip extends StatelessWidget {
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       onSelected: (_) => onSelected(value),
+    );
+  }
+}
+
+class _DateRangeSelector extends StatelessWidget {
+  const _DateRangeSelector({
+    required this.startDate,
+    required this.endDate,
+    required this.sessionCount,
+    required this.onPickStart,
+    required this.onPickEnd,
+  });
+
+  final DateTime startDate;
+  final DateTime endDate;
+  final int sessionCount;
+  final VoidCallback onPickStart;
+  final VoidCallback onPickEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _DateButton(
+                label: context.tr('Start date'),
+                value: _formatDate(startDate),
+                onTap: onPickStart,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _DateButton(
+                label: context.tr('End date'),
+                value: _formatDate(endDate),
+                onTap: onPickEnd,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.brandBlue.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: AppColors.brandBlue,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  context.l10n.format('{count} sessions selected', {
+                    'count': '$sessionCount',
+                  }),
+                  style: TextStyle(
+                    color: AppColors.bodyText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DateButton extends StatelessWidget {
+  const _DateButton({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(Icons.calendar_month_outlined),
+      label: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ],
+      ),
+      style: OutlinedButton.styleFrom(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
   }
 }
@@ -592,4 +816,8 @@ IconData _permissionTypeIcon(String type) {
     'official' => Icons.badge_outlined,
     _ => Icons.description_outlined,
   };
+}
+
+String _formatDate(DateTime value) {
+  return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 }

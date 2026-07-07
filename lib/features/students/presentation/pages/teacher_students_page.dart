@@ -3,6 +3,7 @@ import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/features/students/data/teacher_students_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/teacher_bottom_navigation.dart';
 
 class TeacherStudentsPage extends StatefulWidget {
@@ -51,50 +52,52 @@ class _TeacherStudentsPageState extends State<TeacherStudentsPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<List<TeacherClassStudents>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<List<TeacherClassStudents>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final groups = snapshot.data!;
-            final filteredGroups = _filterGroups(groups, _query);
-            final totalStudents = filteredGroups.fold<int>(
-              0,
-              (total, group) => total + group.students.length,
-            );
+              final groups = snapshot.data!;
+              final filteredGroups = _filterGroups(groups, _query);
+              final totalStudents = filteredGroups.fold<int>(
+                0,
+                (total, group) => total + group.students.length,
+              );
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _SummaryBand(
-                  classCount: filteredGroups.length,
-                  studentCount: totalStudents,
-                ),
-                const SizedBox(height: 12),
-                _SearchField(
-                  controller: _searchController,
-                  onChanged: (value) => setState(() => _query = value),
-                ),
-                const SizedBox(height: 16),
-                if (filteredGroups.isEmpty)
-                  _EmptyState(hasQuery: _query.trim().isNotEmpty)
-                else
-                  for (final group in filteredGroups) ...[
-                    _ClassStudentsCard(
-                      group: group,
-                      onStudentTap: _showStudentDetail,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-              ],
-            );
-          },
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _SummaryBand(
+                    classCount: filteredGroups.length,
+                    studentCount: totalStudents,
+                  ),
+                  const SizedBox(height: 12),
+                  _SearchField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value),
+                  ),
+                  const SizedBox(height: 16),
+                  if (filteredGroups.isEmpty)
+                    _EmptyState(hasQuery: _query.trim().isNotEmpty)
+                  else
+                    for (final group in filteredGroups) ...[
+                      _ClassStudentsCard(
+                        group: group,
+                        onStudentTap: _showStudentDetail,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const TeacherBottomNavigation(

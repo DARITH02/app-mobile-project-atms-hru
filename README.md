@@ -1,17 +1,23 @@
-# hru_atms
+# HRU ATMS
 
-A new Flutter project.
+HRU ATMS is a Flutter application for HRU student and teacher attendance, schedules, grades, documents, permissions, notifications, and profile workflows.
 
-## Getting Started
+## Documentation
 
-This project is a starting point for a Flutter application.
+Read the full project documentation here:
 
-A few resources to get you started if this is your first Flutter project:
+- [Project Documentation](docs/PROJECT_DOCUMENTATION.md)
+- [Android APK Release Guide](docs/ANDROID_APK_RELEASE_GUIDE.md)
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Quick Start
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter pub get
+flutter run
+```
+
+Run with a custom API URL:
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://YOUR_SERVER/api
+```

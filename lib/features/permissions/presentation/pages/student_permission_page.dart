@@ -4,6 +4,7 @@ import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/core/network/api_exception.dart';
 import 'package:hru_atms/features/permissions/data/student_permission_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
 
 class StudentPermissionPage extends StatefulWidget {
@@ -114,74 +115,76 @@ class _StudentPermissionPageState extends State<StudentPermissionPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<StudentPermissionData>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            final hasLoadError = snapshot.hasError || snapshot.data == null;
-            final data =
-                snapshot.data ??
-                const StudentPermissionData(
-                  student: StudentPermissionOwner(
-                    name: 'Student',
-                    studentCode: 'N/A',
-                    group: 'N/A',
-                  ),
-                  requests: [],
-                  sessions: [],
-                );
-            if (_mode == 'session' &&
-                _selectedSessionId == null &&
-                data.sessions.isNotEmpty) {
-              _selectedSessionId = data.sessions.first.id;
-            }
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                if (hasLoadError) ...[
-                  _LoadWarning(onRetry: _refresh),
-                  const SizedBox(height: 14),
-                ],
-                _IntroCard(student: data.student),
-                const SizedBox(height: 14),
-                _PermissionForm(
-                  formKey: _formKey,
-                  mode: _mode,
-                  type: _type,
-                  sessions: data.sessions,
-                  selectedSessionId: _selectedSessionId,
-                  startDate: _startDate,
-                  endDate: _endDate,
-                  reasonController: _reasonController,
-                  submitting: _submitting,
-                  onModeChanged: (value) => setState(() => _mode = value),
-                  onTypeChanged: (value) => setState(() => _type = value),
-                  onSessionChanged: (value) =>
-                      setState(() => _selectedSessionId = value),
-                  onPickStart: () => _pickDate(start: true),
-                  onPickEnd: () => _pickDate(start: false),
-                  onSubmit: _submit,
-                ),
-                const SizedBox(height: 18),
-                _SectionHeader(
-                  title: context.tr('My pre-permissions'),
-                  subtitle: context.l10n.format('{count} items', {
-                    'count': '${data.requests.length}',
-                  }),
-                ),
-                if (data.requests.isEmpty)
-                  const _EmptyState()
-                else
-                  for (final request in data.requests) ...[
-                    _PermissionCard(request: request),
-                    const SizedBox(height: 10),
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<StudentPermissionData>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              final hasLoadError = snapshot.hasError || snapshot.data == null;
+              final data =
+                  snapshot.data ??
+                  const StudentPermissionData(
+                    student: StudentPermissionOwner(
+                      name: 'Student',
+                      studentCode: 'N/A',
+                      group: 'N/A',
+                    ),
+                    requests: [],
+                    sessions: [],
+                  );
+              if (_mode == 'session' &&
+                  _selectedSessionId == null &&
+                  data.sessions.isNotEmpty) {
+                _selectedSessionId = data.sessions.first.id;
+              }
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  if (hasLoadError) ...[
+                    _LoadWarning(onRetry: _refresh),
+                    const SizedBox(height: 14),
                   ],
-              ],
-            );
-          },
+                  _IntroCard(student: data.student),
+                  const SizedBox(height: 14),
+                  _PermissionForm(
+                    formKey: _formKey,
+                    mode: _mode,
+                    type: _type,
+                    sessions: data.sessions,
+                    selectedSessionId: _selectedSessionId,
+                    startDate: _startDate,
+                    endDate: _endDate,
+                    reasonController: _reasonController,
+                    submitting: _submitting,
+                    onModeChanged: (value) => setState(() => _mode = value),
+                    onTypeChanged: (value) => setState(() => _type = value),
+                    onSessionChanged: (value) =>
+                        setState(() => _selectedSessionId = value),
+                    onPickStart: () => _pickDate(start: true),
+                    onPickEnd: () => _pickDate(start: false),
+                    onSubmit: _submit,
+                  ),
+                  const SizedBox(height: 18),
+                  _SectionHeader(
+                    title: context.tr('My pre-permissions'),
+                    subtitle: context.l10n.format('{count} items', {
+                      'count': '${data.requests.length}',
+                    }),
+                  ),
+                  if (data.requests.isEmpty)
+                    const _EmptyState()
+                  else
+                    for (final request in data.requests) ...[
+                      _PermissionCard(request: request),
+                      const SizedBox(height: 10),
+                    ],
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const StudentBottomNavigationForRole(

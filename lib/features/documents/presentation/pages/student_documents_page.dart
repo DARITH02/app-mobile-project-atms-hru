@@ -7,6 +7,7 @@ import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/core/network/api_exception.dart';
 import 'package:hru_atms/features/documents/data/student_documents_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -149,78 +150,83 @@ class _StudentDocumentsPageState extends State<StudentDocumentsPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<StudentDocumentsResult>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<StudentDocumentsResult>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final result = snapshot.data!;
-            final documents = _filter(result.documents);
-            final subjects = ['All', ...result.subjects];
+              final result = snapshot.data!;
+              final documents = _filter(result.documents);
+              final subjects = ['All', ...result.subjects];
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _SummaryBand(result: result),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _searchController,
-                  onChanged: (value) => setState(() => _query = value),
-                  decoration: InputDecoration(
-                    hintText: context.tr('Search documents'),
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _query = '');
-                            },
-                            icon: const Icon(Icons.close_rounded),
-                            tooltip: context.tr('Clear search'),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final subject in subjects) ...[
-                        ChoiceChip(
-                          label: Text(
-                            subject == 'All' ? context.tr('All') : subject,
-                          ),
-                          selected: _subject == subject,
-                          onSelected: (_) => setState(() => _subject = subject),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (documents.isEmpty)
-                  _EmptyState(hasQuery: _query.isNotEmpty || _subject != 'All')
-                else
-                  for (final document in documents) ...[
-                    _DocumentCard(
-                      document: document,
-                      onPreview: () => _preview(document),
-                      onDownload: () => _download(document),
-                      onOpen: () => _download(document, openAfterSave: true),
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _SummaryBand(result: result),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value),
+                    decoration: InputDecoration(
+                      hintText: context.tr('Search documents'),
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _query = '');
+                              },
+                              icon: const Icon(Icons.close_rounded),
+                              tooltip: context.tr('Clear search'),
+                            ),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-              ],
-            );
-          },
+                  ),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final subject in subjects) ...[
+                          ChoiceChip(
+                            label: Text(
+                              subject == 'All' ? context.tr('All') : subject,
+                            ),
+                            selected: _subject == subject,
+                            onSelected: (_) =>
+                                setState(() => _subject = subject),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (documents.isEmpty)
+                    _EmptyState(
+                      hasQuery: _query.isNotEmpty || _subject != 'All',
+                    )
+                  else
+                    for (final document in documents) ...[
+                      _DocumentCard(
+                        document: document,
+                        onPreview: () => _preview(document),
+                        onDownload: () => _download(document),
+                        onOpen: () => _download(document, openAfterSave: true),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const StudentBottomNavigationForRole(

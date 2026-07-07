@@ -42,7 +42,7 @@ class _StudentQrScanPageState extends State<StudentQrScanPage> {
     if (_isSubmitting) return;
 
     final raw = capture.barcodes
-        .map((barcode) => barcode.rawValue)
+        .map(_safeBarcodeValue)
         .whereType<String>()
         .firstWhere((value) => value.trim().isNotEmpty, orElse: () => '');
     final payload = parseStudentQrPayload(raw);
@@ -177,8 +177,10 @@ class _StudentQrScanPageState extends State<StudentQrScanPage> {
                 onDetect: _onDetect,
                 onDetectError: (error, _) {
                   if (!mounted) return;
-                  _setMessage('$error');
+                  _setMessage(_friendlyScannerError(context, error));
                 },
+                errorBuilder: (context, error) => _ScannerError(error: error),
+                placeholderBuilder: (context) => const _ScannerPlaceholder(),
                 scanWindow: scanWindow,
                 tapToFocus: true,
               ),
@@ -283,6 +285,94 @@ class _SecureScannerOverlayPainter extends CustomPainter {
   bool shouldRepaint(covariant _SecureScannerOverlayPainter oldDelegate) {
     return oldDelegate.scanWindow != scanWindow;
   }
+}
+
+class _ScannerPlaceholder extends StatelessWidget {
+  const _ScannerPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 14),
+            Text(
+              context.tr('Starting camera...'),
+              style: TextStyle(
+                color: AppColors.surface,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScannerError extends StatelessWidget {
+  const _ScannerError({required this.error});
+
+  final MobileScannerException error;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.no_photography_outlined,
+                color: AppColors.surface,
+                size: 46,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                context.tr('Could not start camera. Check permission.'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.surface,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String? _safeBarcodeValue(Barcode barcode) {
+  try {
+    return barcode.rawValue;
+  } catch (_) {
+    return null;
+  }
+}
+
+String _friendlyScannerError(BuildContext context, Object error) {
+  if (error is MobileScannerException) {
+    return context.tr('Could not read QR. Try again.');
+  }
+
+  final message = '$error'.replaceFirst('Exception: ', '').trim();
+  if (message.isEmpty ||
+      message.contains('null object reference') ||
+      message.contains('Attempt to invoke virtual method')) {
+    return context.tr('Could not read QR. Try again.');
+  }
+
+  return message;
 }
 
 class _SecureBadge extends StatelessWidget {

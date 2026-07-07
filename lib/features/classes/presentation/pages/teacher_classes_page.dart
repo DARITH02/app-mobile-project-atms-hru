@@ -3,6 +3,7 @@ import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/features/home/data/teacher_dashboard_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/teacher_bottom_navigation.dart';
 
 class TeacherClassesPage extends StatefulWidget {
@@ -43,33 +44,35 @@ class _TeacherClassesPageState extends State<TeacherClassesPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<List<TeacherClass>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<List<TeacherClass>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final classes = snapshot.data!;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _SummaryBand(classes: classes),
-                const SizedBox(height: 16),
-                if (classes.isEmpty)
-                  const _EmptyState()
-                else
-                  for (final item in classes) ...[
-                    _ClassCard(item: item),
-                    const SizedBox(height: 12),
-                  ],
-              ],
-            );
-          },
+              final classes = snapshot.data!;
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _SummaryBand(classes: classes),
+                  const SizedBox(height: 16),
+                  if (classes.isEmpty)
+                    const _EmptyState()
+                  else
+                    for (final item in classes) ...[
+                      _ClassCard(item: item),
+                      const SizedBox(height: 12),
+                    ],
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const TeacherBottomNavigation(

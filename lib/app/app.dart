@@ -107,34 +107,9 @@ class _HruStudentPortalAppState extends State<HruStudentPortalApp> {
                   return LoginPage(authRepository: _authRepository);
                 },
               ),
-              routes: {
-                AppRoutes.login: (_) =>
-                    LoginPage(authRepository: _authRepository),
-                AppRoutes.register: (_) => const RegisterPage(),
-                AppRoutes.home: (_) =>
-                    HomeRouterPage(authRepository: _authRepository),
-                AppRoutes.attendance: (_) => const StudentAttendancePage(),
-                AppRoutes.studentQrScan: (_) => const StudentQrScanPage(),
-                AppRoutes.studentPermissions: (_) =>
-                    const StudentPermissionPage(),
-                AppRoutes.grades: (_) => const StudentGradesPage(),
-                AppRoutes.gpa: (_) => const StudentGpaPage(),
-                AppRoutes.documents: (_) => const StudentDocumentsPage(),
-                AppRoutes.profile: (_) => const StudentProfilePage(),
-                AppRoutes.teacherClasses: (_) => const TeacherClassesPage(),
-                AppRoutes.teacherDocuments: (_) => const TeacherDocumentsPage(),
-                AppRoutes.teacherStudents: (_) => const TeacherStudentsPage(),
-                AppRoutes.teacherSchedules: (_) => const TeacherSchedulesPage(),
-                AppRoutes.teacherAttendance: (_) =>
-                    const TeacherAttendancePage(),
-                AppRoutes.teacherQrCheckIn: (_) => const TeacherQrCheckInPage(),
-                AppRoutes.notifications: (_) => const NotificationsPage(),
-                AppRoutes.about: (_) => const AboutPage(),
-                AppRoutes.teacherPermissions: (_) =>
-                    const TeacherPermissionRequestPage(),
-              },
+              onGenerateRoute: _buildRoute,
               onUnknownRoute: (settings) {
-                return MaterialPageRoute<void>(
+                return _FixedMenuPageRoute<dynamic>(
                   settings: settings,
                   builder: (context) => AppErrorPage(
                     title: context.tr('Page not available'),
@@ -151,6 +126,53 @@ class _HruStudentPortalAppState extends State<HruStudentPortalApp> {
       },
     );
   }
+
+  Route<dynamic>? _buildRoute(RouteSettings settings) {
+    final WidgetBuilder? builder = switch (settings.name) {
+      AppRoutes.login => (context) => LoginPage(
+        authRepository: _authRepository,
+      ),
+      AppRoutes.register => (context) => const RegisterPage(),
+      AppRoutes.home => (context) => HomeRouterPage(
+        authRepository: _authRepository,
+      ),
+      AppRoutes.attendance => (context) => const StudentAttendancePage(),
+      AppRoutes.studentQrScan => (context) => const StudentQrScanPage(),
+      AppRoutes.studentPermissions =>
+        (context) => const StudentPermissionPage(),
+      AppRoutes.grades => (context) => const StudentGradesPage(),
+      AppRoutes.gpa => (context) => const StudentGpaPage(),
+      AppRoutes.documents => (context) => const StudentDocumentsPage(),
+      AppRoutes.profile => (context) => const StudentProfilePage(),
+      AppRoutes.teacherClasses => (context) => const TeacherClassesPage(),
+      AppRoutes.teacherDocuments => (context) => const TeacherDocumentsPage(),
+      AppRoutes.teacherStudents => (context) => const TeacherStudentsPage(),
+      AppRoutes.teacherSchedules => (context) => const TeacherSchedulesPage(),
+      AppRoutes.teacherAttendance => (context) => const TeacherAttendancePage(),
+      AppRoutes.teacherQrCheckIn => (context) => const TeacherQrCheckInPage(),
+      AppRoutes.notifications => (context) => const NotificationsPage(),
+      AppRoutes.about => (context) => const AboutPage(),
+      AppRoutes.teacherPermissions =>
+        (context) => const TeacherPermissionRequestPage(),
+      _ => null,
+    };
+
+    if (builder == null) return null;
+    return _FixedMenuPageRoute<dynamic>(settings: settings, builder: builder);
+  }
+}
+
+class _FixedMenuPageRoute<T> extends PageRouteBuilder<T> {
+  _FixedMenuPageRoute({
+    required RouteSettings settings,
+    required WidgetBuilder builder,
+  }) : super(
+         settings: settings,
+         transitionDuration: Duration.zero,
+         reverseTransitionDuration: Duration.zero,
+         pageBuilder: (context, animation, secondaryAnimation) =>
+             builder(context),
+       );
 }
 
 class _AppLoadingScreen extends StatelessWidget {

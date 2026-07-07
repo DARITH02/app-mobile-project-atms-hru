@@ -40,8 +40,23 @@ class TeacherAttendanceRepository {
     return items;
   }
 
-  Future<TeacherAttendanceSession> qrCheckIn(String token) async {
+  Future<TeacherAttendanceSession> qrCheckIn(
+    String token, {
+    double? latitude,
+    double? longitude,
+    double? accuracy,
+  }) async {
     final authToken = await _token();
+    final payload = <String, Object?>{'token': token};
+    if (latitude != null) {
+      payload['latitude'] = latitude;
+    }
+    if (longitude != null) {
+      payload['longitude'] = longitude;
+    }
+    if (accuracy != null) {
+      payload['accuracy'] = accuracy;
+    }
     final response = await _client.post(
       Uri.parse('${ApiConfig.baseUrl}/teacher/attendance/qr/check-in'),
       headers: {
@@ -49,7 +64,7 @@ class TeacherAttendanceRepository {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $authToken',
       },
-      body: jsonEncode({'token': token}),
+      body: jsonEncode(payload),
     );
     final decoded = _decode(response);
 
@@ -66,9 +81,94 @@ class TeacherAttendanceRepository {
       );
     }
 
-    return TeacherAttendanceSession.fromJson(
-      _asMap(_asMap(decoded)['session']),
+    final body = _asMap(decoded);
+    final sessionJson = _asMap(body['session']);
+    final action = body['attendance_action'] as String?;
+    if (action != null && action.isNotEmpty) {
+      sessionJson['attendance_action'] = action;
+    }
+
+    return TeacherAttendanceSession.fromJson(sessionJson);
+  }
+
+  Future<List<TeacherAttendanceSession>> requiredCheckouts({
+    DateTime? date,
+  }) async {
+    final token = await _token();
+    final dateParam = date == null
+        ? ''
+        : '?date=${date.toIso8601String().substring(0, 10)}';
+
+    final response = await _client.get(
+      Uri.parse(
+        '${ApiConfig.baseUrl}/teacher/attendance/required-checkouts$dateParam',
+      ),
+      headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
     );
+    final decoded = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final body = _asMap(decoded);
+      throw ApiException(
+        body['message'] as String? ??
+            body['error'] as String? ??
+            'Could not load available check-outs.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    return _asList(
+      _asMap(decoded)['sessions'],
+    ).map((item) => TeacherAttendanceSession.fromJson(item)).toList();
+  }
+
+  Future<TeacherAttendanceSession> checkOut(
+    int sessionId, {
+    double? latitude,
+    double? longitude,
+    double? accuracy,
+  }) async {
+    final authToken = await _token();
+    final payload = <String, Object?>{'method': 'self'};
+    if (latitude != null) {
+      payload['latitude'] = latitude;
+    }
+    if (longitude != null) {
+      payload['longitude'] = longitude;
+    }
+    if (accuracy != null) {
+      payload['accuracy'] = accuracy;
+    }
+
+    final response = await _client.post(
+      Uri.parse(
+        '${ApiConfig.baseUrl}/teacher/attendance/sessions/$sessionId/check-out',
+      ),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      },
+      body: jsonEncode(payload),
+    );
+    final decoded = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final body = _asMap(decoded);
+      throw ApiException(
+        body['message'] as String? ??
+            body['error'] as String? ??
+            _firstValidationError(body) ??
+            'Could not check out from this session.',
+        statusCode: response.statusCode,
+        code: body['code'] as String? ?? '',
+        errors: _validationErrors(body),
+      );
+    }
+
+    final sessionJson = _asMap(_asMap(decoded)['session']);
+    sessionJson['attendance_action'] = 'check_out';
+    return TeacherAttendanceSession.fromJson(sessionJson);
   }
 
   Future<TeacherAttendancePage> fetchSessions({int page = 1}) async {
@@ -256,6 +356,7 @@ class TeacherAttendanceSession {
     required this.status,
     required this.correctionStatus,
     required this.requestedStatus,
+    required this.attendanceAction,
   });
 
   final int id;
@@ -271,6 +372,7 @@ class TeacherAttendanceSession {
   final String status;
   final String correctionStatus;
   final String requestedStatus;
+  final String attendanceAction;
 
   bool get hasCheckIn => checkInTime != 'TBD';
   bool get hasCheckOut => checkOutTime != 'TBD';
@@ -295,6 +397,7 @@ class TeacherAttendanceSession {
       status: status ?? this.status,
       correctionStatus: correctionStatus ?? this.correctionStatus,
       requestedStatus: requestedStatus ?? this.requestedStatus,
+      attendanceAction: attendanceAction,
     );
   }
 
@@ -330,6 +433,7 @@ class TeacherAttendanceSession {
           _asMap(json['latest_correction'])['requested_status'] as String? ??
           _asMap(json['correction'])['requested_status'] as String? ??
           '',
+      attendanceAction: json['attendance_action'] as String? ?? '',
     );
   }
 }

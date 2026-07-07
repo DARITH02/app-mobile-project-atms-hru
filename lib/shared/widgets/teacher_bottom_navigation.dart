@@ -3,13 +3,7 @@ import 'package:hru_atms/app/app_routes.dart';
 import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 
-enum TeacherNavDestination {
-  home,
-  classes,
-  schedules,
-  permissions,
-  attendance,
-}
+enum TeacherNavDestination { home, classes, schedules, permissions, attendance }
 
 class TeacherBottomNavigation extends StatelessWidget {
   const TeacherBottomNavigation({
@@ -76,10 +70,21 @@ class TeacherBottomNavigation extends StatelessWidget {
                   onCurrentTap?.call();
                   return;
                 }
+                final currentIndex = _items.indexWhere(
+                  (navItem) => navItem.destination == current,
+                );
+                final targetIndex = _items.indexOf(item);
+                final arguments = targetIndex < currentIndex
+                    ? 'slide-left-to-right'
+                    : 'slide-right-to-left';
                 if (replaceRoutes) {
-                  Navigator.of(context).pushReplacementNamed(item.route);
+                  Navigator.of(
+                    context,
+                  ).pushReplacementNamed(item.route, arguments: arguments);
                 } else {
-                  Navigator.of(context).pushNamed(item.route);
+                  Navigator.of(
+                    context,
+                  ).pushNamed(item.route, arguments: arguments);
                 }
               },
             ),

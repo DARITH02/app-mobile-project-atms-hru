@@ -10,6 +10,7 @@ import 'package:hru_atms/features/home/data/student_dashboard_repository.dart';
 import 'package:hru_atms/features/notifications/data/notification_repository.dart';
 import 'package:hru_atms/core/notifications/schedule_notification_service.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/language_toggle_button.dart';
 import 'package:hru_atms/shared/widgets/maintenance_page.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
@@ -24,7 +25,8 @@ class StudentPortalHomePage extends StatefulWidget {
   State<StudentPortalHomePage> createState() => _StudentPortalHomePageState();
 }
 
-class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
+class _StudentPortalHomePageState extends State<StudentPortalHomePage>
+    with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late final StudentDashboardRepository _dashboardRepository;
   late final StudentGpaRepository _gpaRepository;
@@ -39,16 +41,39 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _dashboardRepository = StudentDashboardRepository();
     _gpaRepository = StudentGpaRepository();
     _notificationRepository = NotificationRepository();
     _homeFuture = _fetchHomeData();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_isLoggingOut) {
+      _refresh();
+    }
+  }
+
   Future<void> _refresh() async {
+    if (!mounted) return;
     final future = _fetchHomeData();
     setState(() => _homeFuture = future);
     await future;
+  }
+
+  Future<void> _openStudentQrScanner() async {
+    final didUpdate = await Navigator.of(
+      context,
+    ).pushNamed(AppRoutes.studentQrScan);
+    if (!mounted || didUpdate != true) return;
+    await _refresh();
   }
 
   Future<_StudentHomeData> _fetchHomeData() async {
@@ -62,14 +87,12 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
         .then<AppNotificationFeed?>((feed) => feed)
         .catchError((_) => null);
     final dashboard = await dashboardFuture;
+    final scheduleReminders = _fullWeekSchedules(dashboard);
     await ScheduleNotificationService.instance.scheduleStudentScheduleReminders(
-      [...dashboard.schedules, ...dashboard.weekSchedules],
+      scheduleReminders,
     );
     await ScheduleNotificationService.instance
-        .scheduleStudentDailyScheduleAlarms([
-          ...dashboard.schedules,
-          ...dashboard.weekSchedules,
-        ]);
+        .scheduleStudentDailyScheduleAlarms(scheduleReminders);
 
     return _StudentHomeData(
       dashboard: dashboard,
@@ -93,104 +116,85 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: FutureBuilder<_StudentHomeData>(
-          future: _homeFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            final error = snapshot.error;
-            if (error is ApiException && error.statusCode == 503) {
-              return MaintenancePage(message: error.message, onRetry: _refresh);
-            }
-            if (snapshot.hasError) {
-              return _ErrorState(onRetry: () => _refresh());
-            }
-            final homeData = snapshot.data;
-            if (homeData == null) {
-              return _ErrorState(onRetry: () => _refresh());
-            }
-            final dashboard = homeData.dashboard;
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<_StudentHomeData>(
+            future: _homeFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              final error = snapshot.error;
+              if (error is ApiException && error.statusCode == 503) {
+                return MaintenancePage(
+                  message: error.message,
+                  onRetry: _refresh,
+                );
+              }
+              if (snapshot.hasError) {
+                return _ErrorState(onRetry: () => _refresh());
+              }
+              final homeData = snapshot.data;
+              if (homeData == null) {
+                return _ErrorState(onRetry: () => _refresh());
+              }
+              final dashboard = homeData.dashboard;
+              final weekSchedules = _fullWeekSchedules(dashboard);
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _header(
-                  dashboard,
-                  () => _scaffoldKey.currentState?.openDrawer(),
-                  homeData.notifications?.unreadCount ?? 0,
-                ),
-                const SizedBox(height: 18),
-                KeyedSubtree(
-                  key: _overviewKey,
-                  child: _studentOverview(dashboard),
-                ),
-                const SizedBox(height: 14),
-                _studentQrScanCard(dashboard),
-                const SizedBox(height: 14),
-                KeyedSubtree(
-                  key: _gradesKey,
-                  child: _performanceGrid(dashboard.performance),
-                ),
-                _sectionHeader(
-                  context.tr('Comparison'),
-                  _localizedDashboardPhrase(context, dashboard.termLabel),
-                ),
-                _comparisonCard(dashboard),
-                KeyedSubtree(
-                  key: _scheduleKey,
-                  child: _sectionHeader(
-                    context.tr('Today schedule'),
-                    context.l10n.format('{count} classes', {
-                      'count': '${dashboard.schedules.length}',
-                    }),
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _header(
+                    dashboard,
+                    () => _scaffoldKey.currentState?.openDrawer(),
+                    homeData.notifications?.unreadCount ?? 0,
                   ),
-                ),
-                if (dashboard.schedules.isEmpty)
-                  _EmptyPanel(
-                    icon: Icons.calendar_today_outlined,
-                    title: context.tr('No scheduled classes'),
-                    subtitle: context.tr(
-                      'Your upcoming sessions will appear here.',
-                    ),
-                  )
-                else
-                  for (final item in dashboard.schedules) ...[
-                    _scheduleCard(item),
-                    const SizedBox(height: 10),
-                  ],
-                _sectionHeader(
-                  context.tr('Next days this week'),
-                  context.l10n.format('{count} classes', {
-                    'count': '${dashboard.weekSchedules.length}',
-                  }),
-                ),
-                _weekScheduleList(dashboard.weekSchedules),
-                KeyedSubtree(
-                  key: _attendanceKey,
-                  child: _sectionHeader(
-                    context.tr('This month attendance'),
-                    _localizedDashboardPhrase(
-                      context,
-                      dashboard.monthAttendance.monthLabel,
+                  const SizedBox(height: 18),
+                  KeyedSubtree(
+                    key: _overviewKey,
+                    child: _studentOverview(dashboard),
+                  ),
+                  const SizedBox(height: 14),
+                  _studentQrScanCard(dashboard),
+                  const SizedBox(height: 14),
+                  KeyedSubtree(
+                    key: _gradesKey,
+                    child: _performanceGrid(dashboard.performance),
+                  ),
+                  _sectionHeader(
+                    context.tr('Comparison'),
+                    _localizedDashboardPhrase(context, dashboard.termLabel),
+                  ),
+                  _comparisonCard(dashboard),
+                  KeyedSubtree(
+                    key: _scheduleKey,
+                    child: _scheduleLayout(dashboard.schedules, weekSchedules),
+                  ),
+                  KeyedSubtree(
+                    key: _attendanceKey,
+                    child: _sectionHeader(
+                      context.tr('This month attendance'),
+                      _localizedDashboardPhrase(
+                        context,
+                        dashboard.monthAttendance.monthLabel,
+                      ),
                     ),
                   ),
-                ),
-                _monthAttendanceGrid(dashboard.monthAttendance),
-                _sectionHeader(
-                  context.tr('Semester result'),
-                  context.tr('Academic result'),
-                ),
-                _semesterResultCard(homeData.transcript),
-                _sectionHeader(
-                  context.tr('Student services'),
-                  context.tr('Quick access'),
-                ),
-                _quickActionGrid(dashboard.services),
-              ],
-            );
-          },
+                  _monthAttendanceGrid(dashboard.monthAttendance),
+                  _sectionHeader(
+                    context.tr('Semester result'),
+                    context.tr('Academic result'),
+                  ),
+                  _semesterResultCard(homeData.transcript),
+                  _sectionHeader(
+                    context.tr('Student services'),
+                    context.tr('Quick access'),
+                  ),
+                  _quickActionGrid(dashboard.services),
+                ],
+              );
+            },
+          ),
         ),
       ),
       drawer: FutureBuilder<_StudentHomeData>(
@@ -474,7 +478,7 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
                 const SizedBox(height: 4),
                 Text(
                   hasSession
-                      ? '${session.subject} - ${_localizedStatus(context, session.status)}'
+                      ? '${session.subject} - ${_localizedStatus(context, session.effectiveStatus)}'
                       : context.tr('Scan the teacher attendance QR code'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -489,8 +493,7 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
           ),
           const SizedBox(width: 10),
           IconButton.filled(
-            onPressed: () =>
-                Navigator.of(context).pushNamed(AppRoutes.studentQrScan),
+            onPressed: _openStudentQrScanner,
             icon: Icon(Icons.qr_code_scanner_rounded),
             tooltip: context.tr('Start scan'),
             style: IconButton.styleFrom(
@@ -574,79 +577,80 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
     );
   }
 
-  Widget _scheduleCard(DashboardSchedule item) {
-    final color = _statusColor(item.status);
-    return _Panel(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Container(
-            width: 62,
-            padding: const EdgeInsets.symmetric(vertical: 11),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              item.time,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: color, fontWeight: FontWeight.w900),
-            ),
+  Widget _scheduleLayout(
+    List<DashboardSchedule> todaySchedules,
+    List<DashboardSchedule> weekSchedules,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          context.tr('Today sessions'),
+          context.l10n.format('{count} sessions', {
+            'count': '${todaySchedules.length}',
+          }),
+        ),
+        _schedulePanel(
+          items: todaySchedules,
+          emptyIcon: Icons.calendar_today_outlined,
+          emptyTitle: context.tr('No sessions today'),
+          emptySubtitle: context.tr(
+            'Today sessions will appear here when available.',
           ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 14.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _StatusPill(text: item.status, color: color),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '${item.room} - ${item.teacher}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.mutedText,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
-              ],
-            ),
+        ),
+        const SizedBox(height: 4),
+        _sectionHeader(
+          context.tr('This week sessions'),
+          context.l10n.format('{count} sessions', {
+            'count': '${weekSchedules.length}',
+          }),
+        ),
+        _schedulePanel(
+          items: weekSchedules,
+          groupedByDay: true,
+          emptyIcon: Icons.event_available_outlined,
+          emptyTitle: context.tr('No sessions this week'),
+          emptySubtitle: context.tr(
+            'This week schedule will appear when available.',
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _weekScheduleList(List<DashboardSchedule> items) {
+  Widget _schedulePanel({
+    required List<DashboardSchedule> items,
+    required IconData emptyIcon,
+    required String emptyTitle,
+    required String emptySubtitle,
+    bool groupedByDay = false,
+  }) {
     if (items.isEmpty) {
       return _EmptyPanel(
-        icon: Icons.event_available_outlined,
-        title: context.tr('No more classes this week'),
-        subtitle: context.tr('Next week schedule will appear when available.'),
+        icon: emptyIcon,
+        title: emptyTitle,
+        subtitle: emptySubtitle,
       );
     }
 
-    return _Panel(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(children: _weekScheduleChildren(items)),
+    return Column(
+      children: groupedByDay
+          ? _weekScheduleChildren(items)
+          : _todayScheduleChildren(items),
     );
+  }
+
+  List<Widget> _todayScheduleChildren(List<DashboardSchedule> items) {
+    final children = <Widget>[];
+
+    for (var index = 0; index < items.length; index += 1) {
+      children.add(_ScheduleListRow(item: items[index], showStatus: true));
+      if (index != items.length - 1) {
+        children.add(const SizedBox(height: 10));
+      }
+    }
+
+    return children;
   }
 
   Widget _monthAttendanceGrid(DashboardMonthAttendance summary) {
@@ -873,9 +877,11 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
         currentDay = item.dayLabel;
         children.add(_WeekDayHeader(label: item.dayLabel, date: item.date));
       }
-      children.add(_WeekScheduleRow(item: item));
+      children.add(
+        _ScheduleListRow(item: item, showDay: true, showStatus: true),
+      );
       if (index != items.length - 1) {
-        children.add(const Divider(height: 1, indent: 18, endIndent: 18));
+        children.add(const SizedBox(height: 10));
       }
     }
 
@@ -976,7 +982,9 @@ class _StudentPortalHomePageState extends State<StudentPortalHomePage> {
 
   void _closeDrawerAndPush(String routeName) {
     Navigator.of(context).pop();
-    Navigator.of(context).pushNamed(routeName);
+    Navigator.of(
+      context,
+    ).pushNamed(routeName, arguments: 'slide-right-to-left');
   }
 
   void _closeDrawerAndScroll(GlobalKey key) {
@@ -1175,14 +1183,20 @@ class _DrawerItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
-    return ListTile(
-      enabled: onTap != null,
-      leading: Icon(icon, color: colors.primary),
-      title: Text(
-        label,
-        style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w800),
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        enabled: onTap != null,
+        leading: Icon(icon, color: colors.primary),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        onTap: onTap,
       ),
-      onTap: onTap,
     );
   }
 }
@@ -1796,54 +1810,167 @@ class _WeekDayHeader extends StatelessWidget {
   }
 }
 
-class _WeekScheduleRow extends StatelessWidget {
-  const _WeekScheduleRow({required this.item});
+class _ScheduleListRow extends StatelessWidget {
+  const _ScheduleListRow({
+    required this.item,
+    this.showDay = false,
+    this.showStatus = false,
+  });
 
   final DashboardSchedule item;
+  final bool showDay;
+  final bool showStatus;
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor(item.status);
+    final effectiveStatus = item.effectiveStatus;
+    final color = _statusColor(effectiveStatus);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D0F172A),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 48,
-            child: Text(
-              item.time,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: color, fontWeight: FontWeight.w900),
-            ),
+          Column(
+            children: [
+              Container(
+                width: 74,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  item.time.replaceAll(' - ', '\n'),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w900,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontWeight: FontWeight.w900),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.primaryText,
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w900,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                    if (showStatus) ...[
+                      const SizedBox(width: 8),
+                      _StatusPill(
+                        text: _localizedStatus(context, effectiveStatus),
+                        color: color,
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${item.room} - ${item.teacher}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.mutedText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    if (showDay)
+                      _ScheduleMetaChip(
+                        icon: Icons.calendar_today_outlined,
+                        text: _scheduleDayText(context, item),
+                      ),
+                    if (item.groupName.trim().isNotEmpty &&
+                        item.groupName != 'N/A')
+                      _ScheduleMetaChip(
+                        icon: Icons.groups_2_outlined,
+                        text: item.groupName,
+                      ),
+                    if (item.room.trim().isNotEmpty)
+                      _ScheduleMetaChip(
+                        icon: Icons.meeting_room_outlined,
+                        text: item.room,
+                      ),
+                    if (item.teacher.trim().isNotEmpty)
+                      _ScheduleMetaChip(
+                        icon: Icons.person_outline_rounded,
+                        text: item.teacher,
+                      ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          _StatusPill(text: item.status, color: color),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduleMetaChip extends StatelessWidget {
+  const _ScheduleMetaChip({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.mutedText),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.bodyText,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1967,6 +2094,35 @@ String _resolveImageUrl(String value) {
   return ApiConfig.resolveUrl(value);
 }
 
+List<DashboardSchedule> _fullWeekSchedules(StudentDashboard dashboard) {
+  final seen = <String>{};
+  final items = <DashboardSchedule>[];
+
+  for (final item in [...dashboard.schedules, ...dashboard.weekSchedules]) {
+    final key = item.id > 0
+        ? '${item.id}'
+        : '${item.date}-${item.time}-${item.title}-${item.groupName}';
+    if (seen.add(key)) items.add(item);
+  }
+
+  items.sort((left, right) {
+    final dateCompare = left.date.compareTo(right.date);
+    if (dateCompare != 0) return dateCompare;
+    return left.time.compareTo(right.time);
+  });
+
+  return items;
+}
+
+String _scheduleDayText(BuildContext context, DashboardSchedule item) {
+  final day = item.dayLabel.trim().isEmpty
+      ? context.tr('Day')
+      : context.tr(item.dayLabel);
+  final date = item.date.trim();
+
+  return date.isEmpty ? day : '$day - $date';
+}
+
 String _localizedDashboardPhrase(BuildContext context, String value) {
   final text = value.trim();
   if (text.isEmpty) return text;
@@ -2001,6 +2157,10 @@ String _localizedStatus(BuildContext context, String value) {
     'issue' => 'Issues',
     'skipped' => 'Skipped',
     'active' => 'Active',
+    'on_time' => 'Active',
+    'teaching' => 'Active',
+    'in_progress' => 'Active',
+    'ongoing' => 'Active',
     'scheduled' => 'Scheduled',
     'completed' => 'Completed',
     _ => value.trim(),
@@ -2030,7 +2190,13 @@ Color _comparisonColor(int index) {
 
 Color _statusColor(String status) {
   final lower = status.toLowerCase();
-  if (lower.contains('active')) return AppColors.green;
+  if (lower.contains('active') ||
+      lower.contains('on_time') ||
+      lower.contains('teaching') ||
+      lower.contains('in_progress') ||
+      lower.contains('ongoing')) {
+    return AppColors.green;
+  }
   if (lower.contains('scheduled')) return AppColors.brandBlue;
   return AppColors.purple;
 }
@@ -2044,7 +2210,13 @@ IconData _attendanceStatusIcon(String status) {
     return Icons.approval_outlined;
   }
   if (lower.contains('issue')) return Icons.report_problem_outlined;
-  if (lower.contains('active')) return Icons.play_circle_outline_rounded;
+  if (lower.contains('active') ||
+      lower.contains('on_time') ||
+      lower.contains('teaching') ||
+      lower.contains('in_progress') ||
+      lower.contains('ongoing')) {
+    return Icons.play_circle_outline_rounded;
+  }
   if (lower.contains('scheduled')) return Icons.event_available_outlined;
   if (lower.contains('skipped')) return Icons.skip_next_rounded;
   if (lower.contains('completed')) return Icons.task_alt_rounded;
@@ -2060,7 +2232,13 @@ Color _attendanceStatusColor(String status) {
     return AppColors.brandBlue;
   }
   if (lower.contains('issue')) return AppColors.purple;
-  if (lower.contains('active')) return AppColors.green;
+  if (lower.contains('active') ||
+      lower.contains('on_time') ||
+      lower.contains('teaching') ||
+      lower.contains('in_progress') ||
+      lower.contains('ongoing')) {
+    return AppColors.green;
+  }
   if (lower.contains('scheduled')) return AppColors.brandTeal;
   if (lower.contains('skipped')) return AppColors.mutedText;
   if (lower.contains('completed')) return AppColors.purple;

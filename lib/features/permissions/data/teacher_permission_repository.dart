@@ -68,6 +68,22 @@ class TeacherPermissionRepository {
     return 'Teacher permission request submitted. Admin approval is required.';
   }
 
+  Future<String> submitMany({
+    required List<int> attendanceSessionIds,
+    required String type,
+    required String reason,
+  }) async {
+    if (attendanceSessionIds.isEmpty) {
+      throw const ApiException('Choose at least one session.');
+    }
+
+    for (final sessionId in attendanceSessionIds) {
+      await submit(attendanceSessionId: sessionId, type: type, reason: reason);
+    }
+
+    return 'Teacher permission requests submitted. Admin approval is required.';
+  }
+
   Future<Object?> _get(String path, String token) async {
     final response = await _client.get(
       Uri.parse('${ApiConfig.baseUrl}$path'),
@@ -165,6 +181,8 @@ class TeacherPermissionSession {
   final String endTime;
 
   String get label => '$subject - $date - $startTime';
+
+  DateTime? get sessionDate => DateTime.tryParse(date);
 
   factory TeacherPermissionSession.fromJson(Map<String, dynamic> json) {
     final subject = json['subject'] is Map

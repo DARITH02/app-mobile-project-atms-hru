@@ -128,6 +128,9 @@ class TeacherDashboard {
       ..sort((a, b) => a.efficacy.compareTo(b.efficacy));
     return sorted.take(3).toList();
   }
+
+  int get activeSessionsNow =>
+      sessions.where((session) => session.isActiveNow).length;
 }
 
 class TeacherSummary {
@@ -213,10 +216,12 @@ class TeacherSession {
   const TeacherSession({
     required this.id,
     required this.classId,
+    required this.className,
     required this.startTime,
     required this.endTime,
     required this.status,
     required this.room,
+    required this.groupName,
     required this.subjectName,
     required this.subjectCode,
     required this.presenceCount,
@@ -225,10 +230,12 @@ class TeacherSession {
 
   final int id;
   final int classId;
+  final String className;
   final DateTime? startTime;
   final DateTime? endTime;
   final String status;
   final String room;
+  final String groupName;
   final String subjectName;
   final String subjectCode;
   final int presenceCount;
@@ -236,6 +243,22 @@ class TeacherSession {
 
   int get attendanceRate =>
       totalStudents > 0 ? ((presenceCount / totalStudents) * 100).round() : 0;
+
+  bool get isActiveNow {
+    final lower = status.trim().toLowerCase();
+    if (_inactiveStatusValues.contains(lower)) return false;
+
+    final start = startTime?.toLocal();
+    final end = endTime?.toLocal();
+    if (start == null || end == null) {
+      return _activeStatusValues.contains(lower);
+    }
+
+    final now = DateTime.now();
+    return !now.isBefore(start) && !now.isAfter(end);
+  }
+
+  String get effectiveStatus => isActiveNow ? 'active' : status;
 
   factory TeacherSession.fromJson(Map<String, dynamic> json) {
     final subject = json['subject'] is Map
@@ -245,10 +268,12 @@ class TeacherSession {
     return TeacherSession(
       id: _int(json['id']),
       classId: _int(json['class_id']),
+      className: json['class_name'] as String? ?? 'Class',
       startTime: _date(json['start_time']),
       endTime: _date(json['end_time']),
       status: json['status'] as String? ?? 'scheduled',
       room: json['room'] as String? ?? 'TBD',
+      groupName: json['group_name'] as String? ?? 'N/A',
       subjectName: subject['name'] as String? ?? 'Class',
       subjectCode: subject['code'] as String? ?? 'N/A',
       presenceCount: _int(json['presence_count']),
@@ -256,6 +281,23 @@ class TeacherSession {
     );
   }
 }
+
+const _activeStatusValues = {
+  'active',
+  'in_progress',
+  'ongoing',
+  'open',
+  'on_time',
+  'teaching',
+};
+
+const _inactiveStatusValues = {
+  'completed',
+  'skipped',
+  'cancelled',
+  'canceled',
+  'closed',
+};
 
 int _int(Object? value) {
   if (value is int) return value;

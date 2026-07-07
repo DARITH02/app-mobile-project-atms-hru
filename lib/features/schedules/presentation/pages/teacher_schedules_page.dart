@@ -3,6 +3,7 @@ import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/features/schedules/data/teacher_schedule_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/teacher_bottom_navigation.dart';
 
 class TeacherSchedulesPage extends StatefulWidget {
@@ -58,60 +59,62 @@ class _TeacherSchedulesPageState extends State<TeacherSchedulesPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<List<TeacherScheduleItem>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<List<TeacherScheduleItem>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final items = snapshot.data!;
-            final groups = _groupSchedulesByClassGroup(items);
-            final lastPage = groups.isEmpty
-                ? 1
-                : ((groups.length + _groupsPerPage - 1) ~/ _groupsPerPage);
-            final currentPage = _page.clamp(1, lastPage);
-            if (currentPage != _page) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) setState(() => _page = currentPage);
-              });
-            }
-            final visibleGroups = groups
-                .skip((currentPage - 1) * _groupsPerPage)
-                .take(_groupsPerPage)
-                .toList();
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _SummaryBand(
-                  scheduleCount: items.length,
-                  groupCount: groups.length,
-                  currentPage: currentPage,
-                  lastPage: lastPage,
-                ),
-                const SizedBox(height: 16),
-                if (items.isEmpty)
-                  const _EmptyState()
-                else
-                  for (final group in visibleGroups) ...[
-                    _ClassGroupScheduleCard(group: group),
-                    const SizedBox(height: 12),
-                  ],
-                const SizedBox(height: 4),
-                _PaginationBar(
-                  currentPage: currentPage,
-                  lastPage: lastPage,
-                  totalItems: groups.length,
-                  perPage: _groupsPerPage,
-                  onPageChanged: _goToPage,
-                ),
-              ],
-            );
-          },
+              final items = snapshot.data!;
+              final groups = _groupSchedulesByClassGroup(items);
+              final lastPage = groups.isEmpty
+                  ? 1
+                  : ((groups.length + _groupsPerPage - 1) ~/ _groupsPerPage);
+              final currentPage = _page.clamp(1, lastPage);
+              if (currentPage != _page) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _page = currentPage);
+                });
+              }
+              final visibleGroups = groups
+                  .skip((currentPage - 1) * _groupsPerPage)
+                  .take(_groupsPerPage)
+                  .toList();
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _SummaryBand(
+                    scheduleCount: items.length,
+                    groupCount: groups.length,
+                    currentPage: currentPage,
+                    lastPage: lastPage,
+                  ),
+                  const SizedBox(height: 16),
+                  if (items.isEmpty)
+                    const _EmptyState()
+                  else
+                    for (final group in visibleGroups) ...[
+                      _ClassGroupScheduleCard(group: group),
+                      const SizedBox(height: 12),
+                    ],
+                  const SizedBox(height: 4),
+                  _PaginationBar(
+                    currentPage: currentPage,
+                    lastPage: lastPage,
+                    totalItems: groups.length,
+                    perPage: _groupsPerPage,
+                    onPageChanged: _goToPage,
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const TeacherBottomNavigation(

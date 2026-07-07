@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:hru_atms/app/app_routes.dart';
 import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
+import 'package:hru_atms/core/network/api_exception.dart';
+import 'package:hru_atms/core/notifications/schedule_notification_service.dart';
 import 'package:hru_atms/features/attendance/data/teacher_attendance_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/teacher_bottom_navigation.dart';
 
 class TeacherAttendancePage extends StatefulWidget {
@@ -14,19 +19,172 @@ class TeacherAttendancePage extends StatefulWidget {
 
 class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   late final TeacherAttendanceRepository _repository;
-  late Future<List<TeacherAttendanceSession>> _future;
+  late Future<_TeacherAttendanceViewData> _future;
+  bool _isCheckingOut = false;
 
   @override
   void initState() {
     super.initState();
     _repository = TeacherAttendanceRepository();
-    _future = _repository.fetchAllSessions();
+    _future = _loadAttendance();
+  }
+
+  Future<_TeacherAttendanceViewData> _loadAttendance() async {
+    final results = await Future.wait([
+      _repository.fetchAllSessions(),
+      _repository.requiredCheckouts(),
+    ]);
+    final sessions = results[0];
+    await ScheduleNotificationService.instance.scheduleTeacherCheckoutReminders(
+      sessions,
+    );
+
+    return _TeacherAttendanceViewData(
+      sessions: sessions,
+      checkoutSessions: results[1],
+    );
   }
 
   Future<void> _refresh() async {
-    final future = _repository.fetchAllSessions();
+    final future = _loadAttendance();
     setState(() => _future = future);
     await future;
+  }
+
+  Future<void> _openTeacherQrScanner() async {
+    final didUpdate = await Navigator.of(
+      context,
+    ).pushNamed(AppRoutes.teacherQrCheckIn);
+    if (!mounted || didUpdate != true) return;
+    await _refresh();
+  }
+
+  Future<void> _startCheckout(
+    List<TeacherAttendanceSession> checkoutSessions,
+  ) async {
+    if (_isCheckingOut || checkoutSessions.isEmpty) return;
+
+    final session = checkoutSessions.length == 1
+        ? checkoutSessions.first
+        : await _pickCheckoutSession(checkoutSessions);
+    if (session == null || !mounted) return;
+
+    setState(() => _isCheckingOut = true);
+    try {
+      final position = await _currentPosition(
+        locationDisabledMessage: context.tr(
+          'Phone location is required for checkout. Enable GPS and try again.',
+        ),
+        locationDeniedMessage: context.tr(
+          'Phone location is required for checkout. Allow location access and try again.',
+        ),
+      );
+      final checkedOut = await _repository.checkOut(
+        session.id,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.l10n.format('{subject} checked out at {time}', {
+              'subject': checkedOut.subjectName,
+              'time': checkedOut.checkOutTime,
+            }),
+          ),
+        ),
+      );
+      await _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is ApiException
+          ? context.tr(error.message)
+          : '$error'.replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingOut = false);
+      }
+    }
+  }
+
+  Future<TeacherAttendanceSession?> _pickCheckoutSession(
+    List<TeacherAttendanceSession> sessions,
+  ) {
+    return showModalBottomSheet<TeacherAttendanceSession>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                context.tr('Choose session to check out'),
+                style: TextStyle(
+                  color: AppColors.primaryText,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            for (final session in sessions)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.orange.withValues(alpha: 0.12),
+                  child: Icon(Icons.logout_rounded, color: AppColors.orange),
+                ),
+                title: Text(
+                  session.subjectName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: Text(
+                  '${session.startTime} - ${session.endTime} - ${context.tr('Room')} ${session.room}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () => Navigator.of(context).pop(session),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<Position> _currentPosition({
+    required String locationDisabledMessage,
+    required String locationDeniedMessage,
+  }) async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled) {
+      throw Exception(locationDisabledMessage);
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw Exception(locationDeniedMessage);
+    }
+
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 15),
+      ),
+    );
   }
 
   @override
@@ -43,55 +201,182 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<List<TeacherAttendanceSession>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<_TeacherAttendanceViewData>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final sessions = snapshot.data!;
-            final now = DateTime.now();
-            final monthSessions =
-                sessions
-                    .where((item) => _isSameMonth(item.attendanceDate, now))
-                    .toList()
-                  ..sort((a, b) {
-                    final left = a.attendanceDate ?? DateTime(1900);
-                    final right = b.attendanceDate ?? DateTime(1900);
-                    return right.compareTo(left);
-                  });
-            final subjectGroups = _groupBySubject(monthSessions);
-            final monthLabel = _monthLabel(context, now);
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _SummaryBand(sessions: monthSessions, monthLabel: monthLabel),
-                const SizedBox(height: 16),
-                _SectionHeader(
-                  title: context.tr('This month records'),
-                  trailing: context.l10n.format('{count} items', {
-                    'count': '${subjectGroups.length}',
-                  }),
-                ),
-                if (subjectGroups.isEmpty)
-                  _EmptyState(monthLabel: monthLabel)
-                else
-                  for (final group in subjectGroups) ...[
-                    _SubjectIssueCard(group: group, repository: _repository),
-                    const SizedBox(height: 12),
-                  ],
-              ],
-            );
-          },
+              final data = snapshot.data!;
+              final sessions = data.sessions;
+              final checkoutSessions = data.checkoutSessions;
+              final now = DateTime.now();
+              final monthSessions =
+                  sessions
+                      .where((item) => _isSameMonth(item.attendanceDate, now))
+                      .toList()
+                    ..sort((a, b) {
+                      final left = a.attendanceDate ?? DateTime(1900);
+                      final right = b.attendanceDate ?? DateTime(1900);
+                      return right.compareTo(left);
+                    });
+              final subjectGroups = _groupBySubject(monthSessions);
+              final monthLabel = _monthLabel(context, now);
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _AttendanceActionPanel(
+                    checkoutCount: checkoutSessions.length,
+                    isCheckingOut: _isCheckingOut,
+                    onCheckOut: checkoutSessions.isEmpty
+                        ? null
+                        : () => _startCheckout(checkoutSessions),
+                    onScanQr: _openTeacherQrScanner,
+                  ),
+                  const SizedBox(height: 16),
+                  _SummaryBand(sessions: monthSessions, monthLabel: monthLabel),
+                  const SizedBox(height: 16),
+                  _SectionHeader(
+                    title: context.tr('This month records'),
+                    trailing: context.l10n.format('{count} items', {
+                      'count': '${subjectGroups.length}',
+                    }),
+                  ),
+                  if (subjectGroups.isEmpty)
+                    _EmptyState(monthLabel: monthLabel)
+                  else
+                    for (final group in subjectGroups) ...[
+                      _SubjectIssueCard(group: group, repository: _repository),
+                      const SizedBox(height: 12),
+                    ],
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const TeacherBottomNavigation(
         current: TeacherNavDestination.attendance,
+      ),
+    );
+  }
+}
+
+class _TeacherAttendanceViewData {
+  const _TeacherAttendanceViewData({
+    required this.sessions,
+    required this.checkoutSessions,
+  });
+
+  final List<TeacherAttendanceSession> sessions;
+  final List<TeacherAttendanceSession> checkoutSessions;
+}
+
+class _AttendanceActionPanel extends StatelessWidget {
+  const _AttendanceActionPanel({
+    required this.checkoutCount,
+    required this.isCheckingOut,
+    required this.onCheckOut,
+    required this.onScanQr,
+  });
+
+  final int checkoutCount;
+  final bool isCheckingOut;
+  final VoidCallback? onCheckOut;
+  final VoidCallback onScanQr;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCheckout = checkoutCount > 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _panelDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.logout_rounded, color: AppColors.orange),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.tr('Teacher attendance'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.primaryText,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      hasCheckout
+                          ? context.l10n.format(
+                              '{count} sessions ready for check-out',
+                              {'count': '$checkoutCount'},
+                            )
+                          : context.tr(
+                              'Check-out opens 30 minutes before end time',
+                            ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.mutedText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: isCheckingOut ? null : onCheckOut,
+                  icon: isCheckingOut
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(Icons.logout_rounded, size: 18),
+                  label: Text(context.tr('Check Out')),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onScanQr,
+                  icon: Icon(Icons.qr_code_scanner_rounded, size: 18),
+                  label: Text(context.tr('Scan QR')),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

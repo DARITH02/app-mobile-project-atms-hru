@@ -48,6 +48,7 @@ dependencies:
   syncfusion_flutter_pdfviewer: ^33.2.15
   path_provider: ^2.1.6
   open_filex: ^4.7.0
+  geolocator: ^14.0.3
 
 dev_dependencies:
   flutter_test:

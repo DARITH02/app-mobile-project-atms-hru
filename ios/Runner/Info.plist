@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>HRU uses the camera to scan teacher attendance QR codes.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>HRU uses your location to verify teacher attendance check-ins on campus.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>HRU uses your photo library to choose a profile photo.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -5,9 +5,11 @@ import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/core/network/api_config.dart';
 import 'package:hru_atms/core/network/api_exception.dart';
 import 'package:hru_atms/core/notifications/schedule_notification_service.dart';
+import 'package:hru_atms/features/attendance/data/teacher_attendance_repository.dart';
 import 'package:hru_atms/features/auth/data/auth_repository.dart';
 import 'package:hru_atms/features/home/data/teacher_dashboard_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/language_toggle_button.dart';
 import 'package:hru_atms/shared/widgets/maintenance_page.dart';
 import 'package:hru_atms/shared/widgets/teacher_bottom_navigation.dart';
@@ -22,10 +24,13 @@ class TeacherHomePage extends StatefulWidget {
   State<TeacherHomePage> createState() => _TeacherHomePageState();
 }
 
-class _TeacherHomePageState extends State<TeacherHomePage> {
+class _TeacherHomePageState extends State<TeacherHomePage>
+    with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late final TeacherDashboardRepository _repository;
+  late final TeacherAttendanceRepository _attendanceRepository;
   late Future<TeacherDashboard> _dashboardFuture;
+  late Future<List<TeacherAttendanceSession>> _checkoutFuture;
   final _overviewKey = GlobalKey();
   final _performanceKey = GlobalKey();
   final _scheduleKey = GlobalKey();
@@ -35,14 +40,70 @@ class _TeacherHomePageState extends State<TeacherHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _repository = TeacherDashboardRepository();
+    _attendanceRepository = TeacherAttendanceRepository();
     _dashboardFuture = _loadDashboard();
+    _checkoutFuture = _loadCheckoutSessions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_isLoggingOut) {
+      _refresh();
+    }
   }
 
   Future<void> _refresh() async {
+    if (!mounted) return;
     final future = _loadDashboard();
-    setState(() => _dashboardFuture = future);
+    final checkoutFuture = _loadCheckoutSessions();
+    setState(() {
+      _dashboardFuture = future;
+      _checkoutFuture = checkoutFuture;
+    });
     await future;
+  }
+
+  Future<void> _openTeacherCheckout() async {
+    await Navigator.of(context).pushNamed(AppRoutes.teacherAttendance);
+    if (!mounted) return;
+    await _refresh();
+  }
+
+  Future<List<TeacherAttendanceSession>> _loadCheckoutSessions() async {
+    final sessions = await _attendanceRepository.requiredCheckouts();
+    await ScheduleNotificationService.instance.scheduleTeacherCheckoutReminders(
+      sessions,
+    );
+    return sessions;
+  }
+
+  Future<void> _openTeacherQrScanner() async {
+    Object? didUpdate;
+    try {
+      didUpdate = await Navigator.of(
+        context,
+      ).pushNamed(AppRoutes.teacherQrCheckIn);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${context.tr('Could not open QR scanner')}: ${'$error'.replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!mounted || didUpdate != true) return;
+    await _refresh();
   }
 
   Future<TeacherDashboard> _loadDashboard() async {
@@ -70,97 +131,114 @@ class _TeacherHomePageState extends State<TeacherHomePage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: FutureBuilder<TeacherDashboard>(
-          future: _dashboardFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            final error = snapshot.error;
-            if (error is ApiException && error.statusCode == 503) {
-              return MaintenancePage(message: error.message, onRetry: _refresh);
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<TeacherDashboard>(
+            future: _dashboardFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              final error = snapshot.error;
+              if (error is ApiException && error.statusCode == 503) {
+                return MaintenancePage(
+                  message: error.message,
+                  onRetry: _refresh,
+                );
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final dashboard = snapshot.data!;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _Header(
-                  teacherName: dashboard.summary.teacher,
-                  profilePhotoUrl: dashboard.summary.profilePhotoUrl,
-                  isLoggingOut: _isLoggingOut,
-                  onOpenMenu: () => _scaffoldKey.currentState?.openDrawer(),
-                  onViewProfile: () =>
-                      Navigator.of(context).pushNamed(AppRoutes.profile),
-                  onNotifications: () =>
-                      Navigator.of(context).pushNamed(AppRoutes.notifications),
-                  onLogout: _logout,
-                ),
-                const SizedBox(height: 18),
-                KeyedSubtree(
-                  key: _overviewKey,
-                  child: _HeroKpi(summary: dashboard.summary),
-                ),
-                const SizedBox(height: 14),
-                _KpiGrid(dashboard: dashboard),
-                const SizedBox(height: 12),
-                _ScanAttendanceShortcut(
-                  summary: dashboard.summary,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pushNamed(AppRoutes.teacherQrCheckIn),
-                ),
-                const SizedBox(height: 18),
-                KeyedSubtree(
-                  key: _performanceKey,
-                  child: _ActionSectionHeader(
-                    title: context.tr('Class performance'),
-                    subtitle: context.l10n.format('{count} assigned classes', {
-                      'count': '${dashboard.classes.length}',
-                    }),
-                    actionLabel: context.tr('View all'),
-                    onAction: () => Navigator.of(
+              final dashboard = snapshot.data!;
+              final todaySessions = _todaySessions(dashboard.sessions);
+              final weekSessions = _weekSessions(dashboard.sessions);
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _Header(
+                    teacherName: dashboard.summary.teacher,
+                    profilePhotoUrl: dashboard.summary.profilePhotoUrl,
+                    isLoggingOut: _isLoggingOut,
+                    onOpenMenu: () => _scaffoldKey.currentState?.openDrawer(),
+                    onViewProfile: () =>
+                        Navigator.of(context).pushNamed(AppRoutes.profile),
+                    onNotifications: () => Navigator.of(
                       context,
-                    ).pushNamed(AppRoutes.teacherClasses),
+                    ).pushNamed(AppRoutes.notifications),
+                    onLogout: _logout,
                   ),
-                ),
-                _PerformancePanel(classes: dashboard.topClasses),
-                const SizedBox(height: 18),
-                _SectionHeader(
-                  title: 'Needs attention',
-                  subtitle: context.tr('Lowest attendance classes'),
-                ),
-                _AttentionPanel(classes: dashboard.attentionClasses),
-                const SizedBox(height: 18),
-                KeyedSubtree(
-                  key: _scheduleKey,
-                  child: _SectionHeader(
-                    title: context.tr('Schedule'),
-                    subtitle: context.l10n.format('{count} recent sessions', {
-                      'count': '${dashboard.sessions.length}',
-                    }),
+                  const SizedBox(height: 18),
+                  KeyedSubtree(
+                    key: _overviewKey,
+                    child: _HeroKpi(dashboard: dashboard),
                   ),
-                ),
-                _SchedulePanel(sessions: dashboard.sessions.take(5).toList()),
-                const SizedBox(height: 18),
-                KeyedSubtree(
-                  key: _chatKey,
-                  child: _SectionHeader(
-                    title: context.tr('Chat'),
-                    subtitle: context.tr('Messages'),
+                  const SizedBox(height: 14),
+                  _KpiGrid(dashboard: dashboard),
+                  const SizedBox(height: 12),
+                  FutureBuilder<List<TeacherAttendanceSession>>(
+                    future: _checkoutFuture,
+                    builder: (context, checkoutSnapshot) {
+                      return _CheckoutAttendanceShortcut(
+                        checkoutCount: checkoutSnapshot.data?.length ?? 0,
+                        isLoading:
+                            checkoutSnapshot.connectionState ==
+                            ConnectionState.waiting,
+                        onTap: _openTeacherCheckout,
+                      );
+                    },
                   ),
-                ),
-                _ChatPanel(
-                  classesCount: dashboard.summary.totalClasses,
-                  studentsCount: dashboard.summary.totalStudents,
-                ),
-              ],
-            );
-          },
+                  const SizedBox(height: 12),
+                  _ScanAttendanceShortcut(
+                    activeSessions: dashboard.activeSessionsNow,
+                    onTap: _openTeacherQrScanner,
+                  ),
+                  const SizedBox(height: 18),
+                  KeyedSubtree(
+                    key: _performanceKey,
+                    child: _ActionSectionHeader(
+                      title: context.tr('Class performance'),
+                      subtitle: context.l10n.format(
+                        '{count} assigned classes',
+                        {'count': '${dashboard.classes.length}'},
+                      ),
+                      actionLabel: context.tr('View all'),
+                      onAction: () => Navigator.of(
+                        context,
+                      ).pushNamed(AppRoutes.teacherClasses),
+                    ),
+                  ),
+                  _PerformancePanel(classes: dashboard.topClasses),
+                  const SizedBox(height: 18),
+                  _SectionHeader(
+                    title: context.tr('Needs attention'),
+                    subtitle: context.tr('Lowest attendance classes'),
+                  ),
+                  _AttentionPanel(classes: dashboard.attentionClasses),
+                  const SizedBox(height: 18),
+                  KeyedSubtree(
+                    key: _scheduleKey,
+                    child: _TeacherScheduleLayout(
+                      todaySessions: todaySessions,
+                      weekSessions: weekSessions,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  KeyedSubtree(
+                    key: _chatKey,
+                    child: _SectionHeader(
+                      title: context.tr('Chat'),
+                      subtitle: context.tr('Messages'),
+                    ),
+                  ),
+                  _ChatPanel(
+                    classesCount: dashboard.summary.totalClasses,
+                    studentsCount: dashboard.summary.totalStudents,
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
       drawer: FutureBuilder<TeacherDashboard>(
@@ -208,7 +286,9 @@ class _TeacherHomePageState extends State<TeacherHomePage> {
 
   void _closeDrawerAndPush(String routeName) {
     Navigator.of(context).pop();
-    Navigator.of(context).pushNamed(routeName);
+    Navigator.of(
+      context,
+    ).pushNamed(routeName, arguments: 'slide-right-to-left');
   }
 
   void _closeDrawerAndScroll(GlobalKey key) {
@@ -401,14 +481,20 @@ class _DrawerItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
-    return ListTile(
-      enabled: onTap != null,
-      leading: Icon(icon, color: colors.primary),
-      title: Text(
-        label,
-        style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w800),
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        enabled: onTap != null,
+        leading: Icon(icon, color: colors.primary),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        onTap: onTap,
       ),
-      onTap: onTap,
     );
   }
 }
@@ -578,12 +664,15 @@ class _Header extends StatelessWidget {
 }
 
 class _HeroKpi extends StatelessWidget {
-  const _HeroKpi({required this.summary});
+  const _HeroKpi({required this.dashboard});
 
-  final TeacherSummary summary;
+  final TeacherDashboard dashboard;
 
   @override
   Widget build(BuildContext context) {
+    final summary = dashboard.summary;
+    final activeSessions = dashboard.activeSessionsNow;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -636,7 +725,7 @@ class _HeroKpi extends StatelessWidget {
                       context.l10n
                           .format('{classes} classes - {active} active now', {
                             'classes': '${summary.totalClasses}',
-                            'active': '${summary.activeSessions}',
+                            'active': '$activeSessions',
                           }),
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.78),
@@ -703,7 +792,7 @@ class _KpiGrid extends StatelessWidget {
       _KpiItem(
         icon: Icons.play_circle_outline,
         label: context.tr('Active'),
-        value: '${dashboard.summary.activeSessions}',
+        value: '${dashboard.activeSessionsNow}',
         color: AppColors.orange,
       ),
     ];
@@ -780,14 +869,17 @@ class _KpiTile extends StatelessWidget {
 }
 
 class _ScanAttendanceShortcut extends StatelessWidget {
-  const _ScanAttendanceShortcut({required this.summary, required this.onTap});
+  const _ScanAttendanceShortcut({
+    required this.activeSessions,
+    required this.onTap,
+  });
 
-  final TeacherSummary summary;
+  final int activeSessions;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final hasActiveSession = summary.activeSessions > 0;
+    final hasActiveSession = activeSessions > 0;
 
     return Material(
       color: AppColors.surface,
@@ -843,7 +935,7 @@ class _ScanAttendanceShortcut extends StatelessWidget {
                       hasActiveSession
                           ? context.l10n.format(
                               '{count} active sessions ready to scan',
-                              {'count': '${summary.activeSessions}'},
+                              {'count': '$activeSessions'},
                             )
                           : context.tr('Open classes and choose a session'),
                       maxLines: 2,
@@ -862,6 +954,105 @@ class _ScanAttendanceShortcut extends StatelessWidget {
                 onPressed: onTap,
                 icon: Icon(Icons.play_arrow_rounded, size: 18),
                 label: Text(context.tr('Start')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckoutAttendanceShortcut extends StatelessWidget {
+  const _CheckoutAttendanceShortcut({
+    required this.checkoutCount,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  final int checkoutCount;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCheckout = checkoutCount > 0;
+
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: hasCheckout ? onTap : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.border),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0F172033),
+                blurRadius: 16,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppColors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.logout_rounded,
+                  color: AppColors.orange,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.tr('Check Out'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.primaryText,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isLoading
+                          ? context.tr('Checking availability...')
+                          : hasCheckout
+                          ? context.l10n.format(
+                              '{count} sessions ready for check-out',
+                              {'count': '$checkoutCount'},
+                            )
+                          : context.tr('Available on checkout time'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: hasCheckout ? onTap : null,
+                icon: Icon(Icons.logout_rounded, size: 18),
+                label: Text(context.tr('Open')),
               ),
             ],
           ),
@@ -1048,10 +1239,45 @@ class _AttentionPanel extends StatelessWidget {
   }
 }
 
+class _TeacherScheduleLayout extends StatelessWidget {
+  const _TeacherScheduleLayout({
+    required this.todaySessions,
+    required this.weekSessions,
+  });
+
+  final List<TeacherSession> todaySessions;
+  final List<TeacherSession> weekSessions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          title: context.tr('Today sessions'),
+          subtitle: context.l10n.format('{count} sessions', {
+            'count': '${todaySessions.length}',
+          }),
+        ),
+        _SchedulePanel(sessions: todaySessions),
+        const SizedBox(height: 18),
+        _SectionHeader(
+          title: context.tr('This week sessions'),
+          subtitle: context.l10n.format('{count} sessions', {
+            'count': '${weekSessions.length}',
+          }),
+        ),
+        _SchedulePanel(sessions: weekSessions, showDay: true),
+      ],
+    );
+  }
+}
+
 class _SchedulePanel extends StatelessWidget {
-  const _SchedulePanel({required this.sessions});
+  const _SchedulePanel({required this.sessions, this.showDay = false});
 
   final List<TeacherSession> sessions;
+  final bool showDay;
 
   @override
   Widget build(BuildContext context) {
@@ -1068,7 +1294,7 @@ class _SchedulePanel extends StatelessWidget {
       child: Column(
         children: [
           for (final session in sessions) ...[
-            _SessionTile(session: session),
+            _SessionTile(session: session, showDay: showDay),
             if (session != sessions.last) const Divider(height: 1),
           ],
         ],
@@ -1078,30 +1304,44 @@ class _SchedulePanel extends StatelessWidget {
 }
 
 class _SessionTile extends StatelessWidget {
-  const _SessionTile({required this.session});
+  const _SessionTile({required this.session, this.showDay = false});
 
   final TeacherSession session;
+  final bool showDay;
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (session.status.toLowerCase()) {
+    final effectiveStatus = session.effectiveStatus;
+    final color = switch (effectiveStatus.toLowerCase()) {
       'active' => AppColors.green,
       'completed' => AppColors.brandBlue,
       _ => AppColors.orange,
     };
 
     return Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 54,
-            height: 54,
+            width: 74,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.schedule_rounded, color: color),
+            child: Text(
+              _timeRange(session).replaceAll(' - ', '\n'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: color,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+                height: 1.2,
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1117,19 +1357,42 @@ class _SessionTile extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  context.l10n.format('{time} - Room {room}', {
-                    'time': _timeRange(session),
-                    'room': session.room,
-                  }),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.mutedText,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    if (showDay)
+                      _SessionMetaChip(
+                        icon: Icons.calendar_today_outlined,
+                        text: _sessionDayText(context, session),
+                      ),
+                    if (session.className.trim().isNotEmpty &&
+                        session.className != 'Class' &&
+                        session.className != session.subjectName)
+                      _SessionMetaChip(
+                        icon: Icons.school_outlined,
+                        text: session.className,
+                      ),
+                    if (session.groupName.trim().isNotEmpty &&
+                        session.groupName != 'N/A')
+                      _SessionMetaChip(
+                        icon: Icons.groups_2_outlined,
+                        text: session.groupName,
+                      ),
+                    if (session.room.trim().isNotEmpty)
+                      _SessionMetaChip(
+                        icon: Icons.meeting_room_outlined,
+                        text: session.room,
+                      ),
+                    _SessionMetaChip(
+                      icon: Icons.how_to_reg_outlined,
+                      text: context.l10n.format('{present}/{total} students', {
+                        'present': '${session.presenceCount}',
+                        'total': '${session.totalStudents}',
+                      }),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 6),
                 ClipRRect(
@@ -1145,12 +1408,58 @@ class _SessionTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            session.status.toUpperCase(),
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _sessionStatusText(context, effectiveStatus),
+              style: TextStyle(
+                color: color,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionMetaChip extends StatelessWidget {
+  const _SessionMetaChip({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.mutedText),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.bodyText,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -1444,6 +1753,82 @@ String _initials(String value) {
 
 String _resolveImageUrl(String value) {
   return ApiConfig.resolveUrl(value);
+}
+
+List<TeacherSession> _todaySessions(List<TeacherSession> sessions) {
+  final now = DateTime.now();
+  return _sortedSessions(
+    sessions.where((session) {
+      final start = session.startTime?.toLocal();
+      return start != null &&
+          start.year == now.year &&
+          start.month == now.month &&
+          start.day == now.day;
+    }),
+  );
+}
+
+List<TeacherSession> _weekSessions(List<TeacherSession> sessions) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
+  final endOfWeek = startOfWeek.add(
+    const Duration(days: 6, hours: 23, minutes: 59, seconds: 59),
+  );
+
+  return _sortedSessions(
+    sessions.where((session) {
+      final start = session.startTime?.toLocal();
+      return start != null &&
+          !start.isBefore(startOfWeek) &&
+          !start.isAfter(endOfWeek);
+    }),
+  );
+}
+
+List<TeacherSession> _sortedSessions(Iterable<TeacherSession> sessions) {
+  final items = sessions.toList()
+    ..sort((left, right) {
+      final leftTime = left.startTime ?? DateTime(1900);
+      final rightTime = right.startTime ?? DateTime(1900);
+      return leftTime.compareTo(rightTime);
+    });
+  return items;
+}
+
+String _sessionDayText(BuildContext context, TeacherSession session) {
+  final start = session.startTime?.toLocal();
+  if (start == null) return context.tr('Day');
+
+  final dayName = switch (start.weekday) {
+    DateTime.monday => 'Monday',
+    DateTime.tuesday => 'Tuesday',
+    DateTime.wednesday => 'Wednesday',
+    DateTime.thursday => 'Thursday',
+    DateTime.friday => 'Friday',
+    DateTime.saturday => 'Saturday',
+    _ => 'Sunday',
+  };
+  final date =
+      '${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}';
+
+  return '${context.tr(dayName)} - $date';
+}
+
+String _sessionStatusText(BuildContext context, String status) {
+  final normalized = switch (status.trim().toLowerCase()) {
+    'active' => 'Active',
+    'on_time' => 'Active',
+    'teaching' => 'Active',
+    'in_progress' => 'Active',
+    'ongoing' => 'Active',
+    'scheduled' => 'Scheduled',
+    'completed' => 'Completed',
+    'skipped' => 'Skipped',
+    _ => status.trim(),
+  };
+
+  return context.tr(normalized);
 }
 
 String _timeRange(TeacherSession session) {

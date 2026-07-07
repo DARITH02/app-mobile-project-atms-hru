@@ -131,6 +131,8 @@ class DashboardActiveSession {
     required this.teacher,
     required this.room,
     required this.status,
+    required this.startTime,
+    required this.endTime,
   });
 
   final int id;
@@ -138,6 +140,12 @@ class DashboardActiveSession {
   final String teacher;
   final String room;
   final String status;
+  final DateTime? startTime;
+  final DateTime? endTime;
+
+  bool get isActiveNow => _isActiveSessionStatus(status, startTime, endTime);
+
+  String get effectiveStatus => isActiveNow ? 'active' : status;
 
   factory DashboardActiveSession.fromJson(Map<String, dynamic> json) {
     return DashboardActiveSession(
@@ -146,6 +154,8 @@ class DashboardActiveSession {
       teacher: json['teacher'] as String? ?? 'N/A',
       room: json['room'] as String? ?? 'TBD',
       status: json['status'] as String? ?? 'scheduled',
+      startTime: _date(json['start_time']),
+      endTime: _date(json['end_time']),
     );
   }
 }
@@ -304,32 +314,48 @@ class DashboardComparison {
 
 class DashboardSchedule {
   const DashboardSchedule({
+    required this.id,
     required this.time,
     required this.date,
     required this.dayLabel,
     required this.title,
     required this.room,
     required this.teacher,
+    required this.groupName,
     required this.status,
+    required this.startTime,
+    required this.endTime,
   });
 
+  final int id;
   final String time;
   final String date;
   final String dayLabel;
   final String title;
   final String room;
   final String teacher;
+  final String groupName;
   final String status;
+  final DateTime? startTime;
+  final DateTime? endTime;
+
+  bool get isActiveNow => _isActiveSessionStatus(status, startTime, endTime);
+
+  String get effectiveStatus => isActiveNow ? 'active' : status;
 
   factory DashboardSchedule.fromJson(Map<String, dynamic> json) {
     return DashboardSchedule(
+      id: _int(json['id']),
       time: json['time'] as String? ?? 'TBD',
       date: json['date'] as String? ?? '',
       dayLabel: json['day_label'] as String? ?? '',
       title: json['title'] as String? ?? 'Class',
       room: json['room'] as String? ?? 'TBD',
       teacher: json['teacher'] as String? ?? 'N/A',
+      groupName: json['group_name'] as String? ?? 'N/A',
       status: json['status'] as String? ?? 'scheduled',
+      startTime: _date(json['start_time']),
+      endTime: _date(json['end_time']),
     );
   }
 }
@@ -357,3 +383,41 @@ int _int(Object? value) {
   }
   return int.tryParse('$value') ?? 0;
 }
+
+DateTime? _date(Object? value) {
+  if (value == null) return null;
+  return DateTime.tryParse('$value');
+}
+
+bool _isActiveSessionStatus(
+  String status,
+  DateTime? startTime,
+  DateTime? endTime,
+) {
+  final lower = status.trim().toLowerCase();
+  if (_inactiveStatusValues.contains(lower)) return false;
+
+  final start = startTime?.toLocal();
+  final end = endTime?.toLocal();
+  if (start == null || end == null) return _activeStatusValues.contains(lower);
+
+  final now = DateTime.now();
+  return !now.isBefore(start) && !now.isAfter(end);
+}
+
+const _activeStatusValues = {
+  'active',
+  'in_progress',
+  'ongoing',
+  'open',
+  'on_time',
+  'teaching',
+};
+
+const _inactiveStatusValues = {
+  'completed',
+  'skipped',
+  'cancelled',
+  'canceled',
+  'closed',
+};

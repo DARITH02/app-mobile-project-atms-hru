@@ -5,6 +5,7 @@ import 'package:hru_atms/core/network/api_exception.dart';
 import 'package:hru_atms/core/network/api_config.dart';
 import 'package:hru_atms/features/profile/data/student_profile_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -80,23 +81,25 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<StudentProfile>(
-          future: _profileFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ProfileError(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<StudentProfile>(
+            future: _profileFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ProfileError(onRetry: _refresh);
+              }
 
-            return _ProfileContent(
-              profile: snapshot.data!,
-              isUploading: _isUploading,
-              onChangePhoto: _changePhoto,
-            );
-          },
+              return _ProfileContent(
+                profile: snapshot.data!,
+                isUploading: _isUploading,
+                onChangePhoto: _changePhoto,
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const StudentBottomNavigationForRole(

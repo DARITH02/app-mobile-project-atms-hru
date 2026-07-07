@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/core/network/api_exception.dart';
@@ -14,33 +15,62 @@ class TeacherQrCheckInPage extends StatefulWidget {
   State<TeacherQrCheckInPage> createState() => _TeacherQrCheckInPageState();
 }
 
-class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage> {
+class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage>
+    with WidgetsBindingObserver {
   late final TeacherAttendanceRepository _repository;
   late final MobileScannerController _scannerController;
   bool _isSubmitting = false;
+  bool _isStartingCamera = false;
+  bool _isDisposed = false;
   String _message = '';
+  DateTime? _lastInvalidScanAt;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _repository = TeacherAttendanceRepository();
     _scannerController = MobileScannerController(
+      autoStart: false,
       detectionSpeed: DetectionSpeed.noDuplicates,
       formats: const [BarcodeFormat.qrCode],
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startScannerSafely(showError: true);
+    });
   }
 
   @override
   void dispose() {
+    _isDisposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     _scannerController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isDisposed) return;
+
+    if (state == AppLifecycleState.resumed) {
+      if (!_isSubmitting) {
+        _startScannerSafely(showError: true);
+      }
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _stopScannerSafely();
+    }
   }
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_isSubmitting) return;
     String raw = '';
     for (final barcode in capture.barcodes) {
-      final value = barcode.rawValue;
+      final value = _safeBarcodeValue(barcode);
       if (value != null && value.trim().isNotEmpty) {
         raw = value;
         break;
@@ -48,6 +78,12 @@ class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage> {
     }
     final token = _extractTeacherQrToken(raw);
     if (token.isEmpty) {
+      final now = DateTime.now();
+      if (_lastInvalidScanAt != null &&
+          now.difference(_lastInvalidScanAt!) < const Duration(seconds: 2)) {
+        return;
+      }
+      _lastInvalidScanAt = now;
       _setMessage(context.tr('This is not a teacher attendance QR code.'));
       return;
     }
@@ -58,8 +94,23 @@ class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage> {
     });
 
     try {
-      await _scannerController.stop();
-      final session = await _repository.qrCheckIn(token);
+      final locationDisabledMessage = context.tr(
+        'Phone location is required for attendance. Enable GPS and try again.',
+      );
+      final locationDeniedMessage = context.tr(
+        'Phone location is required for attendance. Allow location access and try again.',
+      );
+      await _stopScannerSafely();
+      final position = await _currentPosition(
+        locationDisabledMessage: locationDisabledMessage,
+        locationDeniedMessage: locationDeniedMessage,
+      );
+      final session = await _repository.qrCheckIn(
+        token,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+      );
       if (!mounted) return;
       await _showScanSuccessDialog(session);
       if (!mounted) return;
@@ -80,11 +131,41 @@ class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage> {
         }
       }
       try {
-        await _scannerController.start();
+        await _startScannerSafely(showError: true);
       } catch (_) {
         if (!mounted) return;
         _setMessage(context.tr('Could not start camera. Check permission.'));
       }
+    }
+  }
+
+  Future<void> _stopScannerSafely() async {
+    try {
+      await _scannerController.stop();
+    } on MobileScannerException catch (_) {
+      // The plugin can report lifecycle races when the page is opening/closing.
+    }
+  }
+
+  Future<void> _startScannerSafely({bool showError = false}) async {
+    if (_isDisposed || _isStartingCamera) return;
+
+    _isStartingCamera = true;
+    if (mounted && _message.isEmpty) {
+      _setMessage(context.tr('Starting camera...'));
+    }
+
+    try {
+      await _scannerController.start();
+      if (mounted && _message == context.tr('Starting camera...')) {
+        _setMessage('');
+      }
+    } catch (error) {
+      if (mounted && showError) {
+        _setMessage(_friendlyScannerError(context, error));
+      }
+    } finally {
+      _isStartingCamera = false;
     }
   }
 
@@ -130,10 +211,11 @@ class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage> {
             children: [
               MobileScanner(
                 controller: _scannerController,
+                useAppLifecycleState: false,
                 onDetect: _onDetect,
                 onDetectError: (error, _) {
                   if (!mounted) return;
-                  _setMessage('$error');
+                  _setMessage(_friendlyScannerError(context, error));
                 },
                 errorBuilder: (context, error) => _ScannerError(error: error),
                 placeholderBuilder: (context) => const _ScannerPlaceholder(),
@@ -190,10 +272,7 @@ class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage> {
                 color: AppColors.orange.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                Icons.event_busy_rounded,
-                color: AppColors.orange,
-              ),
+              child: Icon(Icons.event_busy_rounded, color: AppColors.orange),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -267,6 +346,33 @@ class _TeacherQrCheckInPageState extends State<TeacherQrCheckInPage> {
       builder: (context) => _ScanResultDialog(session: session),
     );
   }
+
+  Future<Position> _currentPosition({
+    required String locationDisabledMessage,
+    required String locationDeniedMessage,
+  }) async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled) {
+      throw Exception(locationDisabledMessage);
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw Exception(locationDeniedMessage);
+    }
+
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 15),
+      ),
+    );
+  }
 }
 
 class _ScanResultDialog extends StatelessWidget {
@@ -276,7 +382,7 @@ class _ScanResultDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCheckout = session.hasCheckOut;
+    final isCheckout = session.attendanceAction == 'check_out';
     final title = isCheckout ? 'Check-out successful' : 'Check-in successful';
     final actionLabel = isCheckout ? 'Checked out' : 'Checked in';
     final time = isCheckout ? session.checkOutTime : session.checkInTime;
@@ -296,9 +402,7 @@ class _ScanResultDialog extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
-              isCheckout
-                  ? Icons.logout_rounded
-                  : Icons.task_alt_rounded,
+              isCheckout ? Icons.logout_rounded : Icons.task_alt_rounded,
               color: AppColors.green,
             ),
           ),
@@ -458,9 +562,7 @@ class _ScannerFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      child: CustomPaint(
-        painter: _ScannerFramePainter(scanWindow),
-      ),
+      child: CustomPaint(painter: _ScannerFramePainter(scanWindow)),
     );
   }
 }
@@ -582,6 +684,29 @@ class _InstructionPanel extends StatelessWidget {
   }
 }
 
+String? _safeBarcodeValue(Barcode barcode) {
+  try {
+    return barcode.rawValue;
+  } catch (_) {
+    return null;
+  }
+}
+
+String _friendlyScannerError(BuildContext context, Object error) {
+  if (error is MobileScannerException) {
+    return context.tr('Could not read QR. Try again.');
+  }
+
+  final message = '$error'.replaceFirst('Exception: ', '').trim();
+  if (message.isEmpty ||
+      message.contains('null object reference') ||
+      message.contains('Attempt to invoke virtual method')) {
+    return context.tr('Could not read QR. Try again.');
+  }
+
+  return message;
+}
+
 String _extractTeacherQrToken(String value) {
   final trimmed = value.trim();
   if (trimmed.isEmpty) return '';
@@ -589,8 +714,16 @@ String _extractTeacherQrToken(String value) {
   final uri = Uri.tryParse(trimmed);
   if (uri != null) {
     final token = uri.queryParameters['token'];
-    if (token != null && token.trim().isNotEmpty) return token.trim();
+    final normalizedToken = _normalizeTeacherQrToken(token);
+    if (normalizedToken.isNotEmpty) return normalizedToken;
   }
 
-  return trimmed;
+  return _normalizeTeacherQrToken(trimmed);
+}
+
+String _normalizeTeacherQrToken(String? value) {
+  final token = value?.trim() ?? '';
+  if (token.isEmpty) return '';
+
+  return token.replaceAll(' ', '+');
 }

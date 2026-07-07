@@ -3,6 +3,7 @@ import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/features/attendance/data/student_attendance_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
 
 class StudentAttendancePage extends StatefulWidget {
@@ -43,41 +44,43 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<List<StudentAttendanceSubject>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<List<StudentAttendanceSubject>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final subjects = snapshot.data!;
-            final grouped = _groupByGroup(subjects);
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _SummaryBand(subjects: subjects),
-                const SizedBox(height: 18),
-                if (grouped.isEmpty)
-                  _EmptyState()
-                else
-                  for (final entry in grouped.entries) ...[
-                    _GroupHeader(
-                      groupName: entry.key,
-                      count: entry.value.length,
-                    ),
-                    const SizedBox(height: 10),
-                    for (final subject in entry.value) ...[
-                      _SubjectAttendanceCard(subject: subject),
-                      const SizedBox(height: 12),
+              final subjects = snapshot.data!;
+              final grouped = _groupByGroup(subjects);
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _SummaryBand(subjects: subjects),
+                  const SizedBox(height: 18),
+                  if (grouped.isEmpty)
+                    _EmptyState()
+                  else
+                    for (final entry in grouped.entries) ...[
+                      _GroupHeader(
+                        groupName: entry.key,
+                        count: entry.value.length,
+                      ),
+                      const SizedBox(height: 10),
+                      for (final subject in entry.value) ...[
+                        _SubjectAttendanceCard(subject: subject),
+                        const SizedBox(height: 12),
+                      ],
                     ],
-                  ],
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const StudentBottomNavigation(

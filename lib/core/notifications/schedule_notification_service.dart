@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:hru_atms/features/attendance/data/teacher_attendance_repository.dart';
 import 'package:hru_atms/features/home/data/teacher_dashboard_repository.dart';
 import 'package:hru_atms/features/home/data/student_dashboard_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -193,6 +194,66 @@ class ScheduleNotificationService {
         count: entry.value.length,
         firstTitle: entry.value.first.subjectName,
         idBase: 1700000,
+      );
+    }
+  }
+
+  Future<void> scheduleTeacherCheckoutReminders(
+    List<TeacherAttendanceSession> sessions,
+  ) async {
+    if (kIsWeb) return;
+    await initialize();
+
+    final now = DateTime.now();
+    for (final session in sessions) {
+      final end = _teacherAttendanceSessionEnd(session);
+      if (end == null) continue;
+
+      final id = _notificationId(session.id, 700000);
+      if (!session.hasCheckIn || session.hasCheckOut || !end.isAfter(now)) {
+        await _plugin.cancel(id: id);
+        continue;
+      }
+
+      final reminderTime = end.subtract(const Duration(minutes: 15));
+      if (!reminderTime.isAfter(now)) continue;
+
+      await _plugin.cancel(id: id);
+      await _plugin.zonedSchedule(
+        id: id,
+        title: 'Teacher checkout soon',
+        body:
+            '${session.subjectName} ends at ${_time(end)}. Please check out on time.',
+        scheduledDate: tz.TZDateTime.from(reminderTime, tz.local),
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'teacher_checkout_reminders_v1',
+            'Teacher checkout reminders',
+            channelDescription:
+                'Alerts teachers 15 minutes before checkout time.',
+            importance: Importance.max,
+            priority: Priority.max,
+            category: AndroidNotificationCategory.reminder,
+            playSound: true,
+            enableVibration: true,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+          macOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+          windows: WindowsNotificationDetails(
+            subtitle: 'Teacher checkout reminder',
+            duration: WindowsNotificationDuration.long,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: 'teacher_checkout:${session.id}',
       );
     }
   }
@@ -455,6 +516,15 @@ class ScheduleNotificationService {
         ? '${schedule.time}:00'
         : schedule.time;
     return DateTime.tryParse('${schedule.date} $time')?.toLocal();
+  }
+
+  DateTime? _teacherAttendanceSessionEnd(TeacherAttendanceSession session) {
+    if (session.date.isEmpty || session.date == 'N/A') return null;
+    if (session.endTime.isEmpty || session.endTime == 'TBD') return null;
+    final time = session.endTime.length == 5
+        ? '${session.endTime}:00'
+        : session.endTime;
+    return DateTime.tryParse('${session.date} $time')?.toLocal();
   }
 
   bool _isSameDay(DateTime first, DateTime second) {

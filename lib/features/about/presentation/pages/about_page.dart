@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
 
 const _hruHistoryKhmer = '''
@@ -35,146 +36,148 @@ class AboutPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: Text(context.tr('About HRU'))),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.brandBlue,
-                borderRadius: BorderRadius.circular(8),
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: AppColors.brandBlue,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Image.asset(
+                        'assets/branding/hru_logo.png',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.tr('Human Resource University'),
+                            // textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.surface,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            context.tr('Attendance Management System'),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.82),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 16),
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionTitle(
+                      icon: Icons.history_edu_outlined,
+                      title: context.tr('University history'),
                     ),
-                    child: Image.asset(
-                      'assets/branding/hru_logo.png',
-                      fit: BoxFit.contain,
+                    const SizedBox(height: 10),
+                    Text(_hruHistoryKhmer, style: _historyTextStyle),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionTitle(
+                      icon: Icons.translate_rounded,
+                      title: context.tr('University History in English'),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 10),
+                    Text(_hruHistoryEnglish, style: _historyTextStyle),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionTitle(
+                      icon: Icons.code_rounded,
+                      title: context.tr('Developer'),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
                       children: [
-                        Text(
-                          context.tr('Human Resource University'),
-                          // textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppColors.surface,
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
+                        Container(
+                          width: 46,
+                          height: 46,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.brandBlue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'D',
+                            style: TextStyle(
+                              color: AppColors.brandBlue,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          context.tr('Attendance Management System'),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.82),
-                            fontWeight: FontWeight.w700,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Darith',
+                                style: TextStyle(
+                                  color: AppColors.primaryText,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                context.tr('Mobile application developer'),
+                                style: TextStyle(
+                                  color: AppColors.mutedText,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SectionTitle(
-                    icon: Icons.history_edu_outlined,
-                    title: context.tr('University history'),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(_hruHistoryKhmer, style: _historyTextStyle),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SectionTitle(
-                    icon: Icons.translate_rounded,
-                    title: context.tr('University History in English'),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(_hruHistoryEnglish, style: _historyTextStyle),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SectionTitle(
-                    icon: Icons.code_rounded,
-                    title: context.tr('Developer'),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Container(
-                        width: 46,
-                        height: 46,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.brandBlue.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'D',
-                          style: TextStyle(
-                            color: AppColors.brandBlue,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Darith',
-                              style: TextStyle(
-                                color: AppColors.primaryText,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              context.tr('Mobile application developer'),
-                              style: TextStyle(
-                                color: AppColors.mutedText,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: const StudentBottomNavigationForRole(

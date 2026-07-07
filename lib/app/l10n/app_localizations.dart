@@ -166,11 +166,20 @@ const Map<String, String> _km = {
   'Remaining': 'នៅសល់',
   'Comparison': 'ការប្រៀបធៀប',
   'Today schedule': 'កាលវិភាគថ្ងៃនេះ',
+  'Today sessions': 'វគ្គថ្ងៃនេះ',
+  'This week sessions': 'វគ្គក្នុងសប្តាហ៍នេះ',
+  '{count} sessions': 'វគ្គរៀន {count}',
   'Next days this week': 'ថ្ងៃបន្ទាប់ក្នុងសប្តាហ៍នេះ',
   'No scheduled classes': 'មិនមានថ្នាក់ក្នុងកាលវិភាគ',
+  'No sessions today': 'មិនមានវគ្គរៀនថ្ងៃនេះ',
+  'No sessions this week': 'មិនមានវគ្គរៀនក្នុងសប្តាហ៍នេះ',
   'No more classes this week': 'មិនមានថ្នាក់បន្ថែមក្នុងសប្តាហ៍នេះ',
   'Your upcoming sessions will appear here.':
       'វគ្គរៀនខាងមុខរបស់អ្នកនឹងបង្ហាញនៅទីនេះ។',
+  'Today sessions will appear here when available.':
+      'វគ្គថ្ងៃនេះនឹងបង្ហាញនៅទីនេះពេលមាន។',
+  'This week schedule will appear when available.':
+      'កាលវិភាគសប្តាហ៍នេះនឹងបង្ហាញពេលមាន។',
   'Next week schedule will appear when available.':
       'កាលវិភាគសប្តាហ៍ក្រោយនឹងបង្ហាញពេលមាន។',
   'Recent': 'ថ្មីៗ',
@@ -309,6 +318,13 @@ const Map<String, String> _km = {
   'Permission requests': 'សំណើសុំអនុញ្ញាត',
   'Teacher permission': 'ការសុំអនុញ្ញាតរបស់គ្រូ',
   'Choose the session for permission.': 'សូមជ្រើសវគ្គរៀនសម្រាប់សុំអនុញ្ញាត។',
+  'No sessions in this date range.':
+      'មិនមានវគ្គរៀនក្នុងចន្លោះកាលបរិច្ឆេទនេះទេ។',
+  '{count} sessions selected': 'បានជ្រើសវគ្គរៀន {count}',
+  'Teacher permission requests submitted. Admin approval is required.':
+      'បានដាក់សំណើសុំអនុញ្ញាតរបស់គ្រូ។ ត្រូវការការអនុម័តពីអ្នកគ្រប់គ្រង។',
+  'Teacher permission request submitted. Admin approval is required.':
+      'បានដាក់សំណើសុំអនុញ្ញាតរបស់គ្រូ។ ត្រូវការការអនុម័តពីអ្នកគ្រប់គ្រង។',
   'Could not submit permission request.': 'មិនអាចដាក់សំណើសុំអនុញ្ញាតបានទេ។',
   'Your attendance session': 'វគ្គវត្តមានរបស់អ្នក',
   'Sick': 'ឈឺ',
@@ -362,6 +378,8 @@ const Map<String, String> _km = {
   'No sessions scheduled': 'មិនមានកាលវិភាគវគ្គរៀន',
   'Upcoming and recent sessions will appear here.':
       'វគ្គរៀនខាងមុខ និងថ្មីៗនឹងបង្ហាញនៅទីនេះ។',
+  '{present}/{total} students': 'និស្សិត {present}/{total} នាក់',
+  'Skipped': 'បានរំលង',
   '{time} - Room {room}': '{time} - បន្ទប់ {room}',
   'Class communication': 'ការទំនាក់ទំនងក្នុងថ្នាក់',
   '{classes} classes and {students} students ready for messages.':

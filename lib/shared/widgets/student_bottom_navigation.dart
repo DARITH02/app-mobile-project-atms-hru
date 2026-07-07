@@ -65,6 +65,10 @@ class StudentBottomNavigation extends StatelessWidget {
                 child: _StudentBottomNavButton(
                   item: item,
                   isActive: item.destination == current,
+                  currentIndex: _items.indexWhere(
+                    (navItem) => navItem.destination == current,
+                  ),
+                  targetIndex: _items.indexOf(item),
                 ),
               ),
           ],
@@ -92,10 +96,17 @@ class StudentBottomNavigationForRole extends StatelessWidget {
 }
 
 class _StudentBottomNavButton extends StatelessWidget {
-  const _StudentBottomNavButton({required this.item, required this.isActive});
+  const _StudentBottomNavButton({
+    required this.item,
+    required this.isActive,
+    required this.currentIndex,
+    required this.targetIndex,
+  });
 
   final _StudentNavItem item;
   final bool isActive;
+  final int currentIndex;
+  final int targetIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -132,11 +143,16 @@ class _StudentBottomNavButton extends StatelessWidget {
   }
 
   void _goTo(BuildContext context, String route) {
+    final arguments = targetIndex < currentIndex
+        ? 'slide-left-to-right'
+        : 'slide-right-to-left';
     if (route == AppRoutes.home) {
-      Navigator.of(context).pushNamedAndRemoveUntil(route, (_) => false);
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(route, (_) => false, arguments: arguments);
       return;
     }
-    Navigator.of(context).pushReplacementNamed(route);
+    Navigator.of(context).pushReplacementNamed(route, arguments: arguments);
   }
 }
 

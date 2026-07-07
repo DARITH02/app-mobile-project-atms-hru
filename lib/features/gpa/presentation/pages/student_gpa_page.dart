@@ -3,6 +3,7 @@ import 'package:hru_atms/app/l10n/app_localizations.dart';
 import 'package:hru_atms/app/theme/app_colors.dart';
 import 'package:hru_atms/features/gpa/data/student_gpa_repository.dart';
 import 'package:hru_atms/shared/widgets/app_loading_screen.dart';
+import 'package:hru_atms/shared/widgets/fixed_menu_page_slide.dart';
 import 'package:hru_atms/shared/widgets/student_bottom_navigation.dart';
 
 class StudentGpaPage extends StatefulWidget {
@@ -43,40 +44,42 @@ class _StudentGpaPageState extends State<StudentGpaPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: FutureBuilder<StudentGpaTranscript>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AppLoadingScreen();
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _ErrorState(onRetry: _refresh);
-            }
+      body: FixedMenuPageSlide(
+        child: SafeArea(
+          child: FutureBuilder<StudentGpaTranscript>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const AppLoadingScreen();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return _ErrorState(onRetry: _refresh);
+              }
 
-            final transcript = snapshot.data!;
-            final byYear = _groupByYear(transcript.histories);
+              final transcript = snapshot.data!;
+              final byYear = _groupByYear(transcript.histories);
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
-              children: [
-                _TranscriptHeader(transcript: transcript),
-                const SizedBox(height: 18),
-                if (transcript.histories.isEmpty)
-                  _EmptyState()
-                else
-                  for (final entry in byYear.entries) ...[
-                    _YearHeader(year: entry.key),
-                    const SizedBox(height: 10),
-                    for (final history in entry.value) ...[
-                      _SemesterCard(history: history),
-                      const SizedBox(height: 12),
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 108),
+                children: [
+                  _TranscriptHeader(transcript: transcript),
+                  const SizedBox(height: 18),
+                  if (transcript.histories.isEmpty)
+                    _EmptyState()
+                  else
+                    for (final entry in byYear.entries) ...[
+                      _YearHeader(year: entry.key),
+                      const SizedBox(height: 10),
+                      for (final history in entry.value) ...[
+                        _SemesterCard(history: history),
+                        const SizedBox(height: 12),
+                      ],
+                      const SizedBox(height: 4),
                     ],
-                    const SizedBox(height: 4),
-                  ],
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
       bottomNavigationBar: const StudentBottomNavigation(
