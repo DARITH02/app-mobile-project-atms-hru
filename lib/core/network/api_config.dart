@@ -12,7 +12,8 @@ abstract final class ApiConfig {
       return 'http://localhost:8080/api';
     }
 
-    return 'http://192.168.18.2:8080/api';
+    // return 'http://192.168.18.2:8080/api';
+    return 'http://10.12.1.135:8080/api';
   }
 
   static String get serverUrl {
